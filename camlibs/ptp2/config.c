@@ -37,6 +37,8 @@
 #include <gphoto2/gphoto2-port-log.h>
 #include <gphoto2/gphoto2-setting.h>
 
+#include <math.h>
+
 #ifdef ENABLE_NLS
 #  include <libintl.h>
 #  undef _
@@ -1393,6 +1395,7 @@ _put_Nikon_OffOn_UINT8(CONFIG_PUT_ARGS) {
 	return (GP_ERROR);
 }
 
+
 #define PUT_SONY_VALUE_(bits,inttype) 								\
 static int										\
 _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useenumorder) {	\
@@ -1412,9 +1415,10 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 	}										\
 	do {										\
 		origval = dpd.CurrentValue.bits;					\
+		int posorig = -1, posnew = -1;					\
 		/* if it is a ENUM, the camera will walk through the ENUM */		\
 		if (useenumorder && (dpd.FormFlag & PTP_DPFF_Enumeration)) {		\
-			int i, posorig = -1, posnew = -1;				\
+			int i;				\
 											\
 			for (i=0;i<dpd.FORM.Enum.NumberOfValues;i++) {			\
 				if (origval == dpd.FORM.Enum.SupportedValue[i].bits)	\
@@ -1435,6 +1439,7 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 				propval.u8 = 0x01;					\
 			else								\
 				propval.u8 = 0xff;					\
+											\
 		} else {								\
 			if (value == origval)						\
 				break;							\
@@ -1443,16 +1448,26 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 			else								\
 				propval.u8 = 0xff;					\
 		}									\
-		C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, prop, &propval, PTP_DTC_UINT8 ));\
+		int movesteps;\
+		if (posorig > posnew) {\
+			movesteps = posorig - posnew;\
+		} else {\
+			movesteps = posnew - posorig;\
+		}\
+		if (movesteps < 3) { movesteps = 1; }\
+\
+		for (int i=0;i < movesteps;i++) {\
+			C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, prop, &propval, PTP_DTC_UINT8 ));\
+			usleep(70000);\
+		}\
 											\
 		GP_LOG_D ("value is (0x%x vs target 0x%x)", origval, value);		\
 											\
 		/* we tell the camera to do it, but it takes around 0.7 seconds for the SLT-A58 */	\
-		time(&start);								\
+		/*time(&start);	*/							\
 		do {									\
 			C_PTP_REP (ptp_sony_getalldevicepropdesc (params));		\
 			C_PTP_REP (ptp_generic_getdevicepropdesc (params, prop, &dpd));	\
-											\
 			if (dpd.CurrentValue.bits == value) {				\
 				GP_LOG_D ("Value matched!");				\
 				break;							\
@@ -1462,9 +1477,9 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 				break;							\
 			}								\
 											\
-			usleep(200*1000);						\
+			usleep(20*1000);						\
 											\
-			time(&end);							\
+			/*time(&end);	*/						\
 		} while (end-start <= 3);						\
 											\
 		if (dpd.CurrentValue.bits == value) {					\
@@ -1482,7 +1497,19 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 			for (i=0;i<dpd.FORM.Enum.NumberOfValues;i++) {			\
 				if (dpd.CurrentValue.bits == dpd.FORM.Enum.SupportedValue[i].bits) {	\
 					posnow = i;					\
-					break;						\
+					/*printf("check if finished: %d, %d vs %d\n", dpd.CurrentValue.bits, i, posnew);*/\
+					if (abs(i - posnew) < 2) {\
+					    usleep(800000);\
+					    C_PTP_REP (ptp_sony_getalldevicepropdesc (params));		\
+					    C_PTP_REP (ptp_generic_getdevicepropdesc (params, prop, &dpd));	\
+\
+\
+					    if (dpd.CurrentValue.bits == dpd.FORM.Enum.SupportedValue[i].bits) {	\
+					    	break;						\
+					    }\
+					} else {\
+						break;\
+					}\
 				}							\
 			}								\
 			if (posnow == -1) {						\
@@ -1504,6 +1531,7 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 	} while (1);									\
 	return GP_OK;									\
 }
+
 
 PUT_SONY_VALUE_(u16,uint16_t) /* _put_sony_value_u16 */
 PUT_SONY_VALUE_(i16,int16_t) /* _put_sony_value_i16 */
@@ -2943,16 +2971,72 @@ _put_FNumber(CONFIG_PUT_ARGS)
 }
 
 static int
-_put_Sony_FNumber(CONFIG_PUT_ARGS)
-{
-	float			fvalue;
+_put_Sony_FNumber(CONFIG_PUT_ARGS) {
 	PTPParams		*params = &(camera->pl->params);
+	GPContext 		*context = ((PTPData *) params->data)->context;
+	PTPPropertyValue	moveval;
+	float targetf, currentf, targetStops, currentStops, moves;
 
-	CR (gp_widget_get_value (widget, &fvalue));
+	float maxApertureStops = 12;
+	float lastValuef = 0;
 
-	propval->u16 = fvalue*100; /* probably not used */
-	return _put_sony_value_u16 (params, PTP_DPC_FNumber, fvalue*100, 0);
+
+	// Pull the target value
+	CR (gp_widget_get_value (widget, &targetf));
+
+	targetStops = maxApertureStops - (float)(log(targetf*targetf) / log(2));
+
+	do {
+
+		C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
+		C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_FNumber, dpd));
+
+		currentf = ((float)dpd->CurrentValue.u16) / 100.0;
+
+		// Check how many stops we need to move
+		currentStops = maxApertureStops - (float)(log(currentf*currentf) / log(2));
+
+		// How many moves to get to the target (assumes camera is setup for 1/3rd stops)
+		moves = (currentStops - targetStops) * 3;
+
+		if (moves < 0.1 && moves > -0.1) {
+			break; // close enough
+		} else if (moves > 0) {
+			moveval.u8 = 0x01;
+		} else {
+			moveval.u8 = 0xff;
+		}
+
+		if (moves < 0 && moves > -2) {
+			moves = -1;
+		} else if (moves > 0 && moves < 2) {
+			moves = 1;
+		}
+
+		// Make the number of predicted moves
+		for (int i=0;i < ceil(abs(moves));i++) {
+			C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_FNumber, &moveval, PTP_DTC_UINT8 ));
+			usleep(70000);
+		}
+
+		if (targetf == currentf) {
+			// Hit target value
+			break;
+		}
+
+		// Check to make sure we're not stuck not movie
+		if (lastValuef != 0 && abs(currentf - lastValuef) < 0.3) {
+			// No movement
+			break;
+		}
+		lastValuef = currentf;
+
+		usleep(800000);
+	} while(1);
+
+	return GP_OK;
 }
+
 
 static int
 _get_ExpTime(CONFIG_GET_ARGS) {
@@ -4115,43 +4199,87 @@ _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 	GPContext 		*context = ((PTPData *) params->data)->context;
 	time_t			start,end;
 
+	new = 0;
+
+
+	// Pull the current value
 	CR (gp_widget_get_value (widget, &val));
 
-	if (dpd->CurrentValue.u32 == 0) {
-		x = 65536; y = 1;
-	} else {
-		x = dpd->CurrentValue.u32>>16;
-		y = dpd->CurrentValue.u32&0xffff;
-	}
-	old = ((float)x)/(float)y;
-
-	if (!strcmp(val,_("Bulb"))) {
-		new32 = 0;
-		x = 65536; y = 1;
-	} else {
-		if (2!=sscanf(val, "%d/%d", &x, &y)) {
-			if (1==sscanf(val,"%d", &x)) {
-				y = 1;
-			} else {
-				return GP_ERROR_BAD_PARAMETERS;
+	if (new == 0.0) {	
+		if (!strcmp(val,_("Bulb"))) {
+			new32 = 0;
+			x = 65536; y = 1;
+		} else {
+			if (2!=sscanf(val, "%d/%d", &x, &y)) {
+				if (1==sscanf(val,"%d", &x)) {
+					y = 1;
+				} else {
+					return GP_ERROR_BAD_PARAMETERS;
+				}
 			}
+			new32 = (x<<16)|y;
 		}
-		new32 = (x<<16)|y;
+		new = ((float)x)/(float)y;
+
 	}
-	new = ((float)x)/(float)y;
+
+
 	do {
+
+		if (dpd->CurrentValue.u32 == 0) {
+			x = 65536; y = 1;
+		} else {
+			x = dpd->CurrentValue.u32>>16;
+			y = dpd->CurrentValue.u32&0xffff;
+		}
+		old = ((float)x)/(float)y;
+
 		origval = dpd->CurrentValue.u32;
-		if (old == new)
-			break;
-		if (old > new)
-			value.u8 = 0x01;
-		else
-			value.u8 = 0xff;
+
 		a = dpd->CurrentValue.u32>>16;
 		b = dpd->CurrentValue.u32&0xffff;
-		C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_SONY_ShutterSpeed, &value, PTP_DTC_UINT8 ));
+		float baseShutterStops = -12.965784284662087;
+		float currentVal = ((float)a / (float)b);
 
-		GP_LOG_D ("shutterspeed value is (0x%x vs target 0x%x)", origval, new32);
+		float currentStops = (float)(log(currentVal) / log(2)) - baseShutterStops;
+		float targetStops = (float)(log(new) / log(2)) - baseShutterStops;
+
+		float moves = (currentStops - targetStops) * 3.0;
+
+		if (old == 65536.0) {
+			// Handle it jumping up to bulb
+			moves = 1;
+		}
+
+
+		if (moves == 0) {
+			moves = 0;
+			//break;
+		} else if (moves > 0) {
+			value.u8 = 0x01;
+		} else {
+			value.u8 = 0xff;
+		}
+
+
+		if (moves > 0 && moves < 2.0) {
+			moves = 1.0;
+		} else if (moves < 0 && moves > -2.0) {
+			moves = -1.0;
+		} else if (moves > 10) {
+			moves += 3;
+		} else if (moves < -10) {
+			moves -= 3;
+		}
+
+		for (int i=0;i < (int)ceil(abs(moves));i++) {
+		    C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_SONY_ShutterSpeed, &value, PTP_DTC_UINT8 ));
+		    usleep(40000);
+		}
+		// Need to sleep this long to accurately read out the shutter
+		usleep(800000);
+
+		GP_LOG_D ("shutterspeed value is (0x%x vs target 0x%x)\n", origval, new32);
 
 		/* we tell the camera to do it, but it takes around 0.7 seconds for the SLT-A58 */
 		time(&start);
@@ -4175,7 +4303,7 @@ _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 				break;
 			}
 
-			usleep(200*1000);
+			usleep(10*1000);
 
 			time(&end);
 		} while (end-start <= 3);
@@ -4196,7 +4324,6 @@ _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 	propval->u32 = new;
 	return GP_OK;
 }
-
 
 static int
 _get_Nikon_FocalLength(CONFIG_GET_ARGS) {
