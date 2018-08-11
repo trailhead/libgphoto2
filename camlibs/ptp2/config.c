@@ -1464,7 +1464,7 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 		GP_LOG_D ("value is (0x%x vs target 0x%x)", origval, value);		\
 											\
 		/* we tell the camera to do it, but it takes around 0.7 seconds for the SLT-A58 */	\
-		/*time(&start);	*/							\
+		time(&start);								\
 		do {									\
 			C_PTP_REP (ptp_sony_getalldevicepropdesc (params));		\
 			C_PTP_REP (ptp_generic_getdevicepropdesc (params, prop, &dpd));	\
@@ -1479,7 +1479,7 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 											\
 			usleep(20*1000);						\
 											\
-			/*time(&end);	*/						\
+			time(&end);							\
 		} while (end-start <= 3);						\
 											\
 		if (dpd.CurrentValue.bits == value) {					\
