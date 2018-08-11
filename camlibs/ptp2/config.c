@@ -1719,13 +1719,130 @@ _put_ExpCompensation(CONFIG_PUT_ARGS) {
 	return GP_OK ;
 }
 
+// static int
+// _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
+// 	int ret;
+
+// 	ret = _put_ExpCompensation(CONFIG_PUT_NAMES);
+// 	if (ret != GP_OK) return ret;
+// 	return _put_sony_value_i16 (&camera->pl->params, PTP_DPC_ExposureBiasCompensation, propval->i16, 0);
+// }
+
+
+
+
 static int
 _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
-	int ret;
+	PTPParams		*params = &(camera->pl->params);
+	GPContext 		*context = ((PTPData *) params->data)->context;
+	PTPPropertyValue	moveval;
+	float targetStops, currentStops, moves;
+	char *targetStopsStr;
+	uint16_t targetStopsU = 0;
 
-	ret = _put_ExpCompensation(CONFIG_PUT_NAMES);
-	if (ret != GP_OK) return ret;
-	return _put_sony_value_i16 (&camera->pl->params, PTP_DPC_ExposureBiasCompensation, propval->i16, 0);
+	float lastValuef = -100;
+	uint16_t stuckCount = 0;
+
+	PTPDevicePropDesc	dpd2;
+
+
+	char	*value;
+	int16_t	val, targetval = 0;
+	int	mindist = 65535, j;
+
+	CR (gp_widget_get_value(widget, &value));
+	if (1 != sscanf(value,"%g", &targetStops))
+		return GP_ERROR;
+
+	/* float processing is not always hitting the right values, but close */
+	val = targetStops*1000.0;
+	for (j=0;j<dpd->FORM.Enum.NumberOfValues; j++) {
+		if (abs(dpd->FORM.Enum.SupportedValue[j].i16 - val) < mindist) {
+			mindist = abs(dpd->FORM.Enum.SupportedValue[j].i16 - val);
+			targetStopsU = dpd->FORM.Enum.SupportedValue[j].i16;
+		}
+	}
+
+	// The target stop value is parsed into a uint16_t, so first convert to a int16_t,
+	// then cast to a float
+	targetStops = ((float)((int16_t)targetStopsU)) / 1000.0;
+	// printf("Target Stops: %f, %d\n", targetStops, (int16_t)targetStopsU);
+
+	do {
+		// printf("-----\n");
+		C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
+		C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_ExposureBiasCompensation, dpd));
+
+		currentStops = ((float)((int16_t)dpd->CurrentValue.u16)) / 1000.0;
+		// printf("Current Stops: %f, %d\n", currentStops,(int16_t)dpd->CurrentValue.u16);
+
+
+		// printf("Check: %f vs %f\n", targetStops, currentStops);
+		if (targetStops == currentStops) {
+			// Double check
+			// usleep(800000);
+			// C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
+			// C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_ExposureBiasCompensation, dpd));
+
+			// currentStops = ((float)((int16_t)dpd->CurrentValue.u16)) / 1000.0;
+
+			// printf("Final Check: %f vs %f\n", targetStops, currentStops);
+			// if (targetStops == currentStops) {
+				// Hit target value
+				break;
+			// }
+		}
+
+
+		// How many moves to get to the target (assumes camera is setup for 1/3rd stops)
+		moves = (currentStops - targetStops) * 3;
+
+		if (moves < 0.1 && moves > -0.1) {
+			break; // close enough
+		} else if (moves < 0) {
+			moveval.u8 = 0x01;
+		} else {
+			moveval.u8 = 0xff;
+		}
+
+		if (moves < 0 && moves > -2) {
+			moves = 1;
+		} else if (moves > 0 && moves < 2) {
+			moves = 1;
+		} else {
+			// moves *= 1.2;
+		}
+
+		// printf("Moves: %f\n", moves);
+
+		// Make the number of predicted moves
+		for (int i=0;i < ceil(abs(moves));i++) {
+			printf(".");
+			// printf("Move: %d\n", moveval.u8);
+			C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_ExposureBiasCompensation, &moveval, PTP_DTC_UINT8 ));
+			usleep(70000);
+			// usleep(800000);
+		}
+
+		// Check to make sure we're not stuck not movie
+		if (lastValuef != -100 && abs(currentStops - lastValuef) < 0.3) {
+			stuckCount += 1;
+			if (stuckCount > 3) {
+				// printf("No movement\n");
+				// No movement
+				break;
+			}
+		} else {
+			stuckCount = 0;
+		}
+		lastValuef = currentStops;
+
+		if (abs(moves) < 10) {
+			usleep(800000);
+		}
+	} while(1);
+
+	return GP_OK;
 }
 
 static int
