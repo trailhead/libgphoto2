@@ -371,13 +371,14 @@ fixup_cached_deviceinfo (Camera *camera, PTPDeviceInfo *di) {
 	}
 
 	if (di->VendorExtensionID == PTP_VENDOR_FUJI) {
-		C_MEM (di->DevicePropertiesSupported = realloc(di->DevicePropertiesSupported,sizeof(di->DevicePropertiesSupported[0])*(di->DevicePropertiesSupported_len + 5)));
+		C_MEM (di->DevicePropertiesSupported = realloc(di->DevicePropertiesSupported,sizeof(di->DevicePropertiesSupported[0])*(di->DevicePropertiesSupported_len + 6)));
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+0] = PTP_DPC_ExposureTime;
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+1] = PTP_DPC_FNumber;
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+2] = 0xd38c;	/* PC Mode */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+3] = 0xd171;	/* Focus control */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+4] = 0xd21c;	/* Needed for X-T2? */
-		di->DevicePropertiesSupported_len += 5;
+		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+5] = 0xd347;	/* Focus Position */
+		di->DevicePropertiesSupported_len += 6;
 	}
 
 	/* Nikon DSLR hide its newer opcodes behind another vendor specific query,
@@ -4191,6 +4192,7 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 		ptp_getdevicepropvalue (params, 0xd209, &propval, PTP_DTC_UINT16);
 		GP_LOG_D ("XXX Ready to shoot? %X", propval.u16);
 	}
+
 	/* 2 - means OK apparently, 3 - means failed and initiatecapture will get busy. */
 	if (propval.u16 == 3) { /* reported on out of focus */
 		gp_context_error (context, _("Fuji Capture failed: Perhaps no auto-focus?"));
@@ -4225,24 +4227,31 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 			usleep(10000);       
 			i++;              
 		}
+	} else {
+		// The check above for XT1 waits until the camera is ready, so we do the following for the other cameras
+
+
+		/* poll camera until it is ready */
+		do {
+			uint16_t ret, count = 0;
+			uint16_t *events = NULL;
+
+			printf("&EVENTS2: %p\n", &events);
+
+
+			ret = ptp_fuji_getevents (params, &events, &count);
+
+			printf("EVENT LOC: %p, count: %d\n", events, count);
+			if (ret != PTP_RC_OK)  {
+				GP_LOG_D ("XXX d212 property did not work, error 0x%04x, bypassing.", ret);
+				break;
+			}
+			GP_LOG_D ("XXX Ready after shooting? count = %d", count);
+			free (events);
+			C_PTP_REP (ptp_check_event (params));
+			if (count) break;
+		} while (1);
 	}
-
-
-	/* poll camera until it is ready */
-	do {
-		uint16_t ret, count = 0;
-		uint16_t *events = NULL;
-
-		ret = ptp_fuji_getevents (params, &events, &count);
-		if (ret != PTP_RC_OK)  {
-			GP_LOG_D ("XXX d212 property did not work, error 0x%04x, bypassing.", ret);
-			break;
-		}
-		GP_LOG_D ("XXX Ready after shooting? count = %d", count);
-		free (events);
-		C_PTP_REP (ptp_check_event (params));
-		if (count) break;
-	} while (1);
 
 	/* FIXME: Marcus ... I need to review this when I get hands on a camera ... the objecthandles loop needs to go */
 	/* Reporter in https://github.com/gphoto/libgphoto2/issues/133 says only 1 event ever is sent, so this does not work */

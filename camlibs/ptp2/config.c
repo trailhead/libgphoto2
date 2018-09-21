@@ -5093,6 +5093,7 @@ GENERIC16TABLE(Fuji_Aperture,fuji_aperture)
 
 
 
+
 static struct deviceproptableu8 nikon_bracketset[] = {
 	{ N_("AE & Flash"),	0, 0 },
 	{ N_("AE only"),	1, 0 },
@@ -6926,6 +6927,84 @@ _put_Sony_Autofocus(CONFIG_PUT_ARGS)
 }
 
 static int
+_put_Fuji_Focusingpoint(CONFIG_PUT_ARGS)
+{
+
+	PTPParams *params = &(camera->pl->params);
+	char *val;
+	PTPPropertyValue xpropval;
+	GPContext *context = ((PTPData *) params->data)->context;
+
+	CR (gp_widget_get_value(widget, &val));
+
+	// if (params->inliveview) {
+	// 	GP_LOG_D ("terminating running liveview");
+	// 	params->inliveview = 0;
+	// 	C_PTP (ptp_terminateopencapture (params,params->opencapture_transid));
+	// }
+
+
+	xpropval.u16 = 0x8001;
+	C_PTP (ptp_setdevicepropvalue (params, 0x501c, &xpropval, PTP_DTC_UINT16));
+
+	xpropval.str = strdup(val);
+	C_PTP (ptp_setdevicepropvalue (params, 0xd347, &xpropval, PTP_DTC_STR));
+
+	// xpropval.u16 = 0x0001;
+	// C_PTP (ptp_setdevicepropvalue (params, 0xd207, &xpropval, PTP_DTC_UINT16));
+
+	/* poll camera until it is ready */
+	// xpropval.u16 = 0x0000;
+	// while (xpropval.u16 == 0x0000) {
+	// 	C_PTP_REP (ptp_getdevicepropvalue (params, 0xd212, &xpropval, PTP_DTC_UINT64));
+	// }
+
+	// xpropval.u16 = 0x0000;
+	// C_PTP (ptp_setdevicepropvalue (params, 0xd21c, &xpropval, PTP_DTC_STR));
+
+	xpropval.u16 = 0x0002;
+	LOG_ON_PTP_E (ptp_setdevicepropvalue (params, 0xd207, &xpropval, PTP_DTC_UINT16));
+
+
+
+	// xpropval.u16 = 0x0200;
+	// C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &xpropval, PTP_DTC_UINT16));
+	// C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
+
+	// C_PTP_REP (ptp_initiateopencapture (params, 0x0, 0x0)); /* so far use only defaults for storage and ofc */
+	// params->opencapture_transid = params->transaction_id-1; /* transid will be incremented already */
+
+
+	// if (params->inliveview) {
+		// printf("TERM LIVE VIEW\n");
+		// GP_LOG_D ("terminating running liveview");
+		// params->inliveview = 0;
+		// C_PTP (ptp_terminateopencapture (params,params->opencapture_transid));
+	// }
+
+
+	/* focus */
+	// propval.u16 = 0x0200;
+	// C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
+
+
+	// C_PTP_REP (ptp_initiateopencapture (params, 0x0, 0x0)); /* so far use only defaults for storage and ofc */
+	// params->opencapture_transid = params->transaction_id-1; /* transid will be incremented already */
+
+	return GP_OK;
+}
+
+static int
+_get_Fuji_Focusingpoint(CONFIG_GET_ARGS) {
+	char value[64];
+
+	gp_widget_new (GP_WIDGET_TEXT, _(menu->label), widget);
+	gp_widget_set_name (*widget, menu->name);
+	gp_widget_set_value (*widget,"none");
+	return (GP_OK);
+}
+
+static int
 _get_Sony_ManualFocus(CONFIG_GET_ARGS) {
 	int val;
 
@@ -8403,6 +8482,7 @@ static struct submenu capture_settings_menu[] = {
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_OLYMPUS_Aperture,               PTP_VENDOR_GP_OLYMPUS_OMD,   PTP_DTC_UINT16, _get_Olympus_Aperture,     _put_Olympus_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_CANON_Aperture,                 PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_FUJI_Aperture,                  PTP_VENDOR_FUJI,    PTP_DTC_UINT16, _get_Fuji_Aperture,                 _put_Fuji_Aperture },
+	{ N_("FocusPoint"),                     "focuspoint",               0,                PTP_VENDOR_FUJI,    PTP_DTC_STR,    _get_Fuji_Focusingpoint,               _put_Fuji_Focusingpoint },
 	{ N_("AV Open"),                        "avopen",                   PTP_DPC_CANON_AvOpen,                   PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("AV Max"),                         "avmax",                    PTP_DPC_CANON_AvMax,                    PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_CANON_EOS_Aperture,             PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
