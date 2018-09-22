@@ -378,7 +378,7 @@ fixup_cached_deviceinfo (Camera *camera, PTPDeviceInfo *di) {
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+3] = 0xd171;	/* Focus control */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+4] = 0xd21c;	/* Needed for X-T2? */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+5] = 0xd347;	/* Focus Position */
-		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+6] = 0x5001;	/* Exp comp */
+		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+6] = 0x5010;	/* Exp comp */
 		di->DevicePropertiesSupported_len += 7;
 	}
 

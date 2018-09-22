@@ -6930,17 +6930,58 @@ _put_Sony_Autofocus(CONFIG_PUT_ARGS)
 
 static int
 _get_Fuji_Expcomp(CONFIG_GET_ARGS) {
-	int val;
-	gp_widget_new (GP_WIDGET_RANGE, _(menu->label), widget);
-	gp_widget_set_range(*widget, -3.0, 3.0, 0.33333);
-	gp_widget_set_name (*widget,menu->name);
-	val = 0.0; /* always changed */
-	gp_widget_set_value  (*widget, &val);
-	return (GP_OK);
+
+	int j;
+	char buf[13];
+
+	printf("1\n");
+	if (!(dpd->FormFlag & PTP_DPFF_Enumeration))
+		return GP_ERROR;
+	if (dpd->DataType != PTP_DTC_INT16)
+		return GP_ERROR;
+	printf("1.5\n");
+	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
+	printf("1.6\n");
+	gp_widget_set_name (*widget, menu->name);
+	printf("2\n");
+	for (j=0;j<dpd->FORM.Enum.NumberOfValues; j++) {
+		sprintf(buf, "%g", dpd->FORM.Enum.SupportedValue[j].i16/1000.0);
+		gp_widget_add_choice (*widget,buf);
+	}
+	printf("3\n");
+	sprintf(buf, "%g", dpd->CurrentValue.i16/1000.0);
+	gp_widget_set_value (*widget,buf);
+	return GP_OK;
+
+
+
+	// PTPParams *params = &(camera->pl->params);
+	// PTPPropertyValue propval;
+	// int val;
+	// gp_widget_new (GP_WIDGET_RANGE, _(menu->label), widget);
+	// // gp_widget_set_range(*widget, -3.0, 3.0, 0.33333);
+	// gp_widget_set_range(*widget, -3000, 3000, 1000);
+	// gp_widget_set_name (*widget,menu->name);
+	// val = 0.0; /* always changed */
+
+
+	// C_PTP( ptp_getdevicepropvalue (params, 0x5010, &propval, PTP_DTC_UINT16));
+
+	// printf("-----%u\n", (unsigned int)propval.u16);
+
+	// char buf[13];
+	// sprintf(buf, "%d", propval.i16);
+	// printf("BUFFER: %s\n", buf);
+	// gp_widget_set_value  (*widget, buf);
+
+	// // val = (int)propval.u16;
+	// // gp_widget_set_value  (*widget, &propval.u16);
+	// return (GP_OK);
 }
 
 static int
 _put_Fuji_Expcomp(CONFIG_PUT_ARGS) {
+	printf("SET EXP COMP");
 	PTPParams *params = &(camera->pl->params);
 	int val;
 	PTPPropertyValue xpropval;
@@ -6955,9 +6996,11 @@ _put_Fuji_Expcomp(CONFIG_PUT_ARGS) {
 	// }
 
 
-	printf("SET 5001\n");
+	printf("SET 5010\n");
 	xpropval.u16 = 0x0bb8;
-	C_PTP (ptp_setdevicepropvalue (params, 0x5001, &xpropval, PTP_DTC_UINT16));
+	C_PTP_REP (ptp_setdevicepropvalue (params, 0x5010, &xpropval, PTP_DTC_UINT16));
+
+	printf("AFTER\n");
 
 	return GP_OK;
 }
@@ -8520,7 +8563,7 @@ static struct submenu capture_settings_menu[] = {
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_CANON_Aperture,                 PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_FUJI_Aperture,                  PTP_VENDOR_FUJI,    PTP_DTC_UINT16, _get_Fuji_Aperture,                 _put_Fuji_Aperture },
 	{ N_("FocusPoint"),                     "focuspoint",               0,                                      PTP_VENDOR_FUJI,    PTP_DTC_STR,    _get_Fuji_Focusingpoint,            _put_Fuji_Focusingpoint },
-	{ N_("expcomp"),                        "expcomp",                  0,                                      PTP_VENDOR_FUJI,    PTP_DTC_UINT16,  _get_Fuji_Expcomp,                 _put_Fuji_Expcomp },
+	{ N_("expcomp"),                        "expcomp",                  0,                                      PTP_VENDOR_FUJI,    PTP_DTC_INT16,  _get_Fuji_Expcomp,                 _put_Fuji_Expcomp },
 	{ N_("AV Open"),                        "avopen",                   PTP_DPC_CANON_AvOpen,                   PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("AV Max"),                         "avmax",                    PTP_DPC_CANON_AvMax,                    PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_CANON_EOS_Aperture,             PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },

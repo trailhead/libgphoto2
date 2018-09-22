@@ -5646,7 +5646,7 @@ ptp_get_property_description(PTPParams* params, uint16_t dpc)
 		{PTP_DPC_FUJI_Quality, N_("Aperture")},				/* 0xD218 */
 		{PTP_DPC_FUJI_Quality, N_("Shutter Speed")},			/* 0xD219 */
 		{PTP_DPC_FUJI_FocusPoint, N_("Focus Point")},			/* 0xD347 */
-		{PTP_DPC_FUJI_Expcomp, N_("expcomp")},			/* 0x5001 */
+		{PTP_DPC_FUJI_Expcomp, N_("Exposure Comp")},			/* 0x5010 */
 		{0,NULL}
         };
 
