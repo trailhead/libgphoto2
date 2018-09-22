@@ -6926,6 +6926,43 @@ _put_Sony_Autofocus(CONFIG_PUT_ARGS)
 	return GP_OK;
 }
 
+
+
+static int
+_get_Fuji_Expcomp(CONFIG_GET_ARGS) {
+	int val;
+	gp_widget_new (GP_WIDGET_RANGE, _(menu->label), widget);
+	gp_widget_set_range(*widget, -3.0, 3.0, 0.33333);
+	gp_widget_set_name (*widget,menu->name);
+	val = 0.0; /* always changed */
+	gp_widget_set_value  (*widget, &val);
+	return (GP_OK);
+}
+
+static int
+_put_Fuji_Expcomp(CONFIG_PUT_ARGS) {
+	PTPParams *params = &(camera->pl->params);
+	int val;
+	PTPPropertyValue xpropval;
+	GPContext *context = ((PTPData *) params->data)->context;
+
+	CR (gp_widget_get_value(widget, &val));
+
+	// if (params->inliveview) {
+	// 	GP_LOG_D ("terminating running liveview");
+	// 	params->inliveview = 0;
+	// 	C_PTP (ptp_terminateopencapture (params,params->opencapture_transid));
+	// }
+
+
+	printf("SET 5001\n");
+	xpropval.u16 = 0x0bb8;
+	C_PTP (ptp_setdevicepropvalue (params, 0x5001, &xpropval, PTP_DTC_UINT16));
+
+	return GP_OK;
+}
+
+
 static int
 _put_Fuji_Focusingpoint(CONFIG_PUT_ARGS)
 {
@@ -8482,7 +8519,8 @@ static struct submenu capture_settings_menu[] = {
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_OLYMPUS_Aperture,               PTP_VENDOR_GP_OLYMPUS_OMD,   PTP_DTC_UINT16, _get_Olympus_Aperture,     _put_Olympus_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_CANON_Aperture,                 PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_FUJI_Aperture,                  PTP_VENDOR_FUJI,    PTP_DTC_UINT16, _get_Fuji_Aperture,                 _put_Fuji_Aperture },
-	{ N_("FocusPoint"),                     "focuspoint",               0,                PTP_VENDOR_FUJI,    PTP_DTC_STR,    _get_Fuji_Focusingpoint,               _put_Fuji_Focusingpoint },
+	{ N_("FocusPoint"),                     "focuspoint",               0,                                      PTP_VENDOR_FUJI,    PTP_DTC_STR,    _get_Fuji_Focusingpoint,            _put_Fuji_Focusingpoint },
+	{ N_("expcomp"),                        "expcomp",                  0,                                      PTP_VENDOR_FUJI,    PTP_DTC_UINT16,  _get_Fuji_Expcomp,                 _put_Fuji_Expcomp },
 	{ N_("AV Open"),                        "avopen",                   PTP_DPC_CANON_AvOpen,                   PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("AV Max"),                         "avmax",                    PTP_DPC_CANON_AvMax,                    PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },
 	{ N_("Aperture"),                       "aperture",                 PTP_DPC_CANON_EOS_Aperture,             PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_Aperture,                _put_Canon_Aperture },

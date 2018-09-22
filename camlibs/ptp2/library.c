@@ -371,14 +371,15 @@ fixup_cached_deviceinfo (Camera *camera, PTPDeviceInfo *di) {
 	}
 
 	if (di->VendorExtensionID == PTP_VENDOR_FUJI) {
-		C_MEM (di->DevicePropertiesSupported = realloc(di->DevicePropertiesSupported,sizeof(di->DevicePropertiesSupported[0])*(di->DevicePropertiesSupported_len + 6)));
+		C_MEM (di->DevicePropertiesSupported = realloc(di->DevicePropertiesSupported,sizeof(di->DevicePropertiesSupported[0])*(di->DevicePropertiesSupported_len + 7)));
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+0] = PTP_DPC_ExposureTime;
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+1] = PTP_DPC_FNumber;
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+2] = 0xd38c;	/* PC Mode */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+3] = 0xd171;	/* Focus control */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+4] = 0xd21c;	/* Needed for X-T2? */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+5] = 0xd347;	/* Focus Position */
-		di->DevicePropertiesSupported_len += 6;
+		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+6] = 0x5001;	/* Exp comp */
+		di->DevicePropertiesSupported_len += 7;
 	}
 
 	/* Nikon DSLR hide its newer opcodes behind another vendor specific query,
@@ -4180,6 +4181,11 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 	}
 
 	C_PTP (ptp_getobjecthandles (params, PTP_HANDLER_SPECIAL, 0x000000, 0x000000, &beforehandles));
+
+
+	propval.u16 = 0xf448;
+	C_PTP_REP (ptp_setdevicepropvalue (params, 0x5001, &propval, PTP_DTC_UINT16));
+
 
 	/* focus */
 	propval.u16 = 0x0200;
