@@ -4182,11 +4182,6 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 
 	C_PTP (ptp_getobjecthandles (params, PTP_HANDLER_SPECIAL, 0x000000, 0x000000, &beforehandles));
 
-
-	propval.u16 = 0xf448;
-	C_PTP_REP (ptp_setdevicepropvalue (params, 0x5001, &propval, PTP_DTC_UINT16));
-
-
 	/* focus */
 	propval.u16 = 0x0200;
 	C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
