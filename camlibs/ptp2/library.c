@@ -4197,6 +4197,11 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 	/* 2 - means OK apparently, 3 - means failed and initiatecapture will get busy. */
 	if (propval.u16 == 3) { /* reported on out of focus */
 		gp_context_error (context, _("Fuji Capture failed: Perhaps no auto-focus?"));
+
+		// release the half press if we fail to focus
+		propval.u16 = 0x0004;
+		C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
+		C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
 		return GP_ERROR;
 	}
 
@@ -4204,6 +4209,7 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 	propval.u16 = 0x0304;
 	C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
 	C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
+
 
 	/* debug code currently. not working as-is */
 	if (params->deviceinfo.Model && !strcmp(params->deviceinfo.Model,"X-T1")) { // X-T1 needs this

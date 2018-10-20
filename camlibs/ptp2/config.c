@@ -6951,46 +6951,42 @@ _put_Fuji_Focusingpoint(CONFIG_PUT_ARGS)
 	xpropval.str = strdup(val);
 	C_PTP (ptp_setdevicepropvalue (params, 0xd347, &xpropval, PTP_DTC_STR));
 
-	// xpropval.u16 = 0x0001;
-	// C_PTP (ptp_setdevicepropvalue (params, 0xd207, &xpropval, PTP_DTC_UINT16));
-
-	/* poll camera until it is ready */
-	// xpropval.u16 = 0x0000;
-	// while (xpropval.u16 == 0x0000) {
-	// 	C_PTP_REP (ptp_getdevicepropvalue (params, 0xd212, &xpropval, PTP_DTC_UINT64));
-	// }
-
-	// xpropval.u16 = 0x0000;
-	// C_PTP (ptp_setdevicepropvalue (params, 0xd21c, &xpropval, PTP_DTC_STR));
-
 	xpropval.u16 = 0x0002;
 	LOG_ON_PTP_E (ptp_setdevicepropvalue (params, 0xd207, &xpropval, PTP_DTC_UINT16));
 
 
-
-	// xpropval.u16 = 0x0200;
-	// C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &xpropval, PTP_DTC_UINT16));
-	// C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
-
-	// C_PTP_REP (ptp_initiateopencapture (params, 0x0, 0x0)); /* so far use only defaults for storage and ofc */
-	// params->opencapture_transid = params->transaction_id-1; /* transid will be incremented already */
-
-
-	// if (params->inliveview) {
-		// printf("TERM LIVE VIEW\n");
-		// GP_LOG_D ("terminating running liveview");
-		// params->inliveview = 0;
-		// C_PTP (ptp_terminateopencapture (params,params->opencapture_transid));
-	// }
-
-
 	/* focus */
-	// propval.u16 = 0x0200;
-	// C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
+	xpropval.u16 = 0x0200;
+	C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &xpropval, PTP_DTC_UINT16));
+	C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
+
+	/* poll camera until it is ready */
+	xpropval.u16 = 0x0001;
+	while (xpropval.u16 == 0x0001) {
+		ptp_getdevicepropvalue (params, 0xd209, &xpropval, PTP_DTC_UINT16);
+		GP_LOG_D ("XXX Ready to shoot? %X", xpropval.u16);
+	}
+
+	/* 2 - means OK apparently, 3 - means failed and initiatecapture will get busy. */
+	if (xpropval.u16 == 3) { /* reported on out of focus */
+		gp_context_error (context, _("Fuji Capture failed: Perhaps no auto-focus?"));
+
+		// release the half press if we fail to focus
+		xpropval.u16 = 0x0004;
+		C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &xpropval, PTP_DTC_UINT16));
+		C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
+		return GP_ERROR;
+	}
 
 
-	// C_PTP_REP (ptp_initiateopencapture (params, 0x0, 0x0)); /* so far use only defaults for storage and ofc */
-	// params->opencapture_transid = params->transaction_id-1; /* transid will be incremented already */
+	// release the half press
+	xpropval.u16 = 0x0004;
+	C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &xpropval, PTP_DTC_UINT16));
+	C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
+
+	xpropval.u16 = 0x0001;
+	LOG_ON_PTP_E (ptp_setdevicepropvalue (params, 0xd207, &xpropval, PTP_DTC_UINT16));
+
 
 	return GP_OK;
 }
