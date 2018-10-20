@@ -6944,6 +6944,11 @@ _put_Fuji_Focusingpoint(CONFIG_PUT_ARGS)
 	// 	C_PTP (ptp_terminateopencapture (params,params->opencapture_transid));
 	// }
 
+	if (val == "") {
+		// Allow this so it can be toggled
+		return GP_OK;
+	}
+
 
 	xpropval.u16 = 0x8001;
 	C_PTP (ptp_setdevicepropvalue (params, 0x501c, &xpropval, PTP_DTC_UINT16));
