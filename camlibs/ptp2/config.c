@@ -6944,7 +6944,7 @@ _put_Fuji_Focusingpoint(CONFIG_PUT_ARGS)
 	// 	C_PTP (ptp_terminateopencapture (params,params->opencapture_transid));
 	// }
 
-	if (val == "") {
+	if (strcmp(val, "") == 0) {
 		// Allow this so it can be toggled
 		return GP_OK;
 	}
