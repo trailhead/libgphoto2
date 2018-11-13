@@ -6383,6 +6383,75 @@ _put_Canon_CaptureMode(CONFIG_PUT_ARGS) {
 		return camera_unprepare_capture (camera, NULL);
 }
 
+typedef enum {
+	AF_METHOD_FLEXZONE_SINGLE = 1,
+	AF_METHOD_FACE_DETECT_TRACKING = 2,
+	AF_METHOD_FLEXZONE_MULTI = 3
+} canonAFMethodStates;
+
+static struct {
+	canonAFMethodStates value;
+	char *label;
+} canonAFMethods[] = {
+	{AF_METHOD_FLEXZONE_SINGLE,      N_("FlexZone Single")},
+	{AF_METHOD_FACE_DETECT_TRACKING, N_("Face Detection + Tracking AF")},
+	{AF_METHOD_FLEXZONE_MULTI,       N_("FlexZone Multi")},
+	{0, NULL}
+};
+
+static int
+_get_Canon_AFMethod(CONFIG_GET_ARGS) {
+	int i;
+	PTPParams		*params = &(camera->pl->params);
+
+	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
+	gp_widget_set_name (*widget, menu->name);
+
+	i = 0;
+	while (canonAFMethods[i].label) {
+		gp_widget_add_choice (*widget, canonAFMethods[i].label);
+		if (dpd->CurrentValue.u32 == canonAFMethods[i].value) {
+			gp_widget_set_value  (*widget, canonAFMethods[i].label);
+		}
+		i++;
+	}
+
+	return GP_OK;
+}
+
+static int
+_put_Canon_AFMethod(CONFIG_PUT_ARGS) {
+	char *value;
+	int i;
+	PTPPropertyValue	propvalue;
+	PTPParams		*params = &(camera->pl->params);
+
+	if (!have_eos_prop(camera, PTP_VENDOR_CANON, PTP_DPC_CANON_EOS_LvAfSystem) ) {
+		GP_LOG_D ("No LvAfSystem property?");
+		return GP_OK;
+	}
+
+	CR (gp_widget_get_value(widget, &value));
+
+	// Default to FlexZone Single
+	propval->u32 = AF_METHOD_FLEXZONE_SINGLE;
+
+	i = 0;
+	while (canonAFMethods[i].label) {
+		GP_LOG_D (canonAFMethods[i].label);
+
+		if (!strcmp(value, canonAFMethods[i].label)) {
+			propval->u32 = canonAFMethods[i].value;
+
+			GP_LOG_D ("Setting afmethod to %u", propval->u32);
+			GP_LOG_D (canonAFMethods[i].label);
+		}
+		i++;
+	}
+
+	return GP_OK;
+}
+
 static int
 _get_Canon_EOS_ViewFinder(CONFIG_GET_ARGS) {
 	int val;
@@ -8096,7 +8165,7 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("Camera Date and Time"),   "datetime",             PTP_DPC_DateTime,                   0,                  PTP_DTC_STR,    _get_STR_as_time,               _put_STR_as_time },
 	{ N_("Beep Mode"),              "beep",                 PTP_DPC_CANON_BeepMode,             PTP_VENDOR_CANON,   PTP_DTC_UINT8,  _get_Canon_BeepMode,            _put_Canon_BeepMode },
 	{ N_("Image Comment"),          "imagecomment",         PTP_DPC_NIKON_ImageCommentString,   PTP_VENDOR_NIKON,   PTP_DTC_STR,    _get_STR,                       _put_STR },
-	{ N_("WLAN GUID"),          	"guid",         	PTP_DPC_NIKON_GUID,   		    PTP_VENDOR_NIKON,   PTP_DTC_STR,    _get_STR,                       _put_STR },
+	{ N_("WLAN GUID"),          	  "guid",         				PTP_DPC_NIKON_GUID,   		    			PTP_VENDOR_NIKON,   PTP_DTC_STR,    _get_STR,                       _put_STR },
 	{ N_("Enable Image Comment"),   "imagecommentenable",   PTP_DPC_NIKON_ImageCommentEnable,   PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,         _put_Nikon_OnOff_UINT8 },
 	{ N_("LCD Off Time"),           "lcdofftime",           PTP_DPC_NIKON_MonitorOff,           PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_LCDOffTime,          _put_Nikon_LCDOffTime },
 	{ N_("Recording Media"),        "recordingmedia",       PTP_DPC_NIKON_RecordingMedia,       PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_RecordingMedia,      _put_Nikon_RecordingMedia },
@@ -8125,12 +8194,13 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("Menus and Playback"),     "menusandplayback",     PTP_DPC_NIKON_MenusAndPlayback,     PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_MenusAndPlayback,    _put_Nikon_MenusAndPlayback },
 
 /* virtual */
-	{ N_("Fast Filesystem"),	"fastfs",	0,  PTP_VENDOR_NIKON,   0,  _get_Nikon_FastFS,      _put_Nikon_FastFS },
-	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_NIKON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("Autofocus"),		"autofocus",    0,  PTP_VENDOR_NIKON,   0,  _get_Autofocus,         _put_Autofocus },
-	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("CHDK"),     		"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
-	{ N_("Capture"),		"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
+	{ N_("Fast Filesystem"),	      "fastfs",	0,  PTP_VENDOR_NIKON,   0,  _get_Nikon_FastFS,      _put_Nikon_FastFS },
+	{ N_("Capture Target"),		      "capturetarget",0,  PTP_VENDOR_NIKON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("Autofocus"),		          "autofocus",    0,  PTP_VENDOR_NIKON,   0,  _get_Autofocus,         _put_Autofocus },
+	{ N_("Capture Target"),					"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("CHDK"),     							"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
+	{ N_("Capture"),								"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
+	{ N_("AF Method"),						  "afmethod", PTP_DPC_CANON_EOS_LvAfSystem,  PTP_VENDOR_CANON,   PTP_DTC_UINT32,  _get_Canon_AFMethod,     _put_Canon_AFMethod },
 	{ 0,0,0,0,0,0,0 },
 };
 
