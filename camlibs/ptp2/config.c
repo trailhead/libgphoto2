@@ -6628,47 +6628,23 @@ _put_Canon_CaptureMode(CONFIG_PUT_ARGS) {
 		return camera_unprepare_capture (camera, NULL);
 }
 
-typedef enum {
-	AF_METHOD_FLEXZONE_SINGLE = 1,
-	AF_METHOD_FACE_DETECT_TRACKING = 2,
-	AF_METHOD_FLEXZONE_MULTI = 3
-} canonAFMethodStates;
-
-static struct {
-	canonAFMethodStates value;
-	char *label;
-} canonAFMethods[] = {
-	{AF_METHOD_FLEXZONE_SINGLE,      N_("FlexZone Single")},
-	{AF_METHOD_FACE_DETECT_TRACKING, N_("Face Detection + Tracking AF")},
-	{AF_METHOD_FLEXZONE_MULTI,       N_("FlexZone Multi")},
-	{0, NULL}
-};
-
 static int
 _get_Canon_AFMethod(CONFIG_GET_ARGS) {
-	int i;
+	float value_float;
 	PTPParams		*params = &(camera->pl->params);
 
-	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
-	gp_widget_set_name (*widget, menu->name);
-
-	i = 0;
-	while (canonAFMethods[i].label) {
-		gp_widget_add_choice (*widget, canonAFMethods[i].label);
-		if (dpd->CurrentValue.u32 == canonAFMethods[i].value) {
-			gp_widget_set_value  (*widget, canonAFMethods[i].label);
-		}
-		i++;
-	}
+	gp_widget_new (GP_WIDGET_RANGE, _(menu->label), widget);
+	gp_widget_set_name (*widget,menu->name);
+	gp_widget_set_range (*widget, 0, 0xFFFFFFFF, 1);
+	value_float = (float)dpd->CurrentValue.u32;
+	gp_widget_set_value  (*widget, &value_float);
 
 	return GP_OK;
 }
 
 static int
 _put_Canon_AFMethod(CONFIG_PUT_ARGS) {
-	char *value;
-	int i;
-	PTPPropertyValue	propvalue;
+	float value;
 	PTPParams		*params = &(camera->pl->params);
 
 	if (!have_eos_prop(camera, PTP_VENDOR_CANON, PTP_DPC_CANON_EOS_LvAfSystem) ) {
@@ -6679,20 +6655,7 @@ _put_Canon_AFMethod(CONFIG_PUT_ARGS) {
 	CR (gp_widget_get_value(widget, &value));
 
 	// Default to FlexZone Single
-	propval->u32 = AF_METHOD_FLEXZONE_SINGLE;
-
-	i = 0;
-	while (canonAFMethods[i].label) {
-		GP_LOG_D (canonAFMethods[i].label);
-
-		if (!strcmp(value, canonAFMethods[i].label)) {
-			propval->u32 = canonAFMethods[i].value;
-
-			GP_LOG_D ("Setting afmethod to %u", propval->u32);
-			GP_LOG_D (canonAFMethods[i].label);
-		}
-		i++;
-	}
+	propval->u32 = (uint32_t)value;
 
 	return GP_OK;
 }
