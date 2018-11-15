@@ -371,13 +371,15 @@ fixup_cached_deviceinfo (Camera *camera, PTPDeviceInfo *di) {
 	}
 
 	if (di->VendorExtensionID == PTP_VENDOR_FUJI) {
-		C_MEM (di->DevicePropertiesSupported = realloc(di->DevicePropertiesSupported,sizeof(di->DevicePropertiesSupported[0])*(di->DevicePropertiesSupported_len + 5)));
+		C_MEM (di->DevicePropertiesSupported = realloc(di->DevicePropertiesSupported,sizeof(di->DevicePropertiesSupported[0])*(di->DevicePropertiesSupported_len + 7)));
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+0] = PTP_DPC_ExposureTime;
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+1] = PTP_DPC_FNumber;
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+2] = 0xd38c;	/* PC Mode */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+3] = 0xd171;	/* Focus control */
 		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+4] = 0xd21c;	/* Needed for X-T2? */
-		di->DevicePropertiesSupported_len += 5;
+		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+5] = 0xd347;	/* Focus Position */
+		di->DevicePropertiesSupported[di->DevicePropertiesSupported_len+6] = 0x5010;	/* Exp comp */
+		di->DevicePropertiesSupported_len += 7;
 	}
 
 	/* Nikon DSLR hide its newer opcodes behind another vendor specific query,
@@ -4203,6 +4205,7 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 
 	/* focus */
 	propval.u16 = 0x0200;
+
 	C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
 	C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
 
@@ -4212,9 +4215,15 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 		ptp_getdevicepropvalue (params, 0xd209, &propval, PTP_DTC_UINT16);
 		GP_LOG_D ("XXX Ready to shoot? %X", propval.u16);
 	}
+
 	/* 2 - means OK apparently, 3 - means failed and initiatecapture will get busy. */
 	if (propval.u16 == 3) { /* reported on out of focus */
 		gp_context_error (context, _("Fuji Capture failed: Perhaps no auto-focus?"));
+
+		// release the half press if we fail to focus
+		propval.u16 = 0x0004;
+		C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
+		C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
 		return GP_ERROR;
 	}
 
@@ -4222,6 +4231,7 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 	propval.u16 = 0x0304;
 	C_PTP_REP (ptp_setdevicepropvalue (params, 0xd208, &propval, PTP_DTC_UINT16));
 	C_PTP_REP(ptp_initiatecapture(params, 0x00000000, 0x00000000));
+
 
 	/* debug code currently. not working as-is */
 	if (params->deviceinfo.Model && !strcmp(params->deviceinfo.Model,"X-T1")) { // X-T1 needs this
@@ -4246,24 +4256,31 @@ camera_fuji_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 			usleep(10000);       
 			i++;              
 		}
+	} else {
+		// The check above for XT1 waits until the camera is ready, so we do the following for the other cameras
+
+
+		/* poll camera until it is ready */
+		do {
+			uint16_t ret, count = 0;
+			uint16_t *events = NULL;
+
+			printf("&EVENTS2: %p\n", &events);
+
+
+			ret = ptp_fuji_getevents (params, &events, &count);
+
+			printf("EVENT LOC: %p, count: %d\n", events, count);
+			if (ret != PTP_RC_OK)  {
+				GP_LOG_D ("XXX d212 property did not work, error 0x%04x, bypassing.", ret);
+				break;
+			}
+			GP_LOG_D ("XXX Ready after shooting? count = %d", count);
+			free (events);
+			C_PTP_REP (ptp_check_event (params));
+			if (count) break;
+		} while (1);
 	}
-
-
-	/* poll camera until it is ready */
-	do {
-		uint16_t ret, count = 0;
-		uint16_t *events = NULL;
-
-		ret = ptp_fuji_getevents (params, &events, &count);
-		if (ret != PTP_RC_OK)  {
-			GP_LOG_D ("XXX d212 property did not work, error 0x%04x, bypassing.", ret);
-			break;
-		}
-		GP_LOG_D ("XXX Ready after shooting? count = %d", count);
-		free (events);
-		C_PTP_REP (ptp_check_event (params));
-		if (count) break;
-	} while (1);
 
 	/* FIXME: Marcus ... I need to review this when I get hands on a camera ... the objecthandles loop needs to go */
 	/* Reporter in https://github.com/gphoto/libgphoto2/issues/133 says only 1 event ever is sent, so this does not work */
@@ -4897,75 +4914,80 @@ camera_trigger_canon_eos_capture (Camera *camera, GPContext *context)
 	if (ptp_operation_issupported(params, PTP_OC_CANON_EOS_RemoteReleaseOn)) {
 		if (!is_canon_eos_m (params)) {
 			/* Regular EOS */
-			int 			manualfocus = 0, foundfocusinfo = 0;
+			/* For our needs, we always manually focus */
+			int 			manualfocus = 1, foundfocusinfo = 0;
 			PTPDevicePropDesc	dpd;
 
-			/* are we in manual focus mode ... value would be 3 */
-			if (PTP_RC_OK == ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_FocusMode, &dpd)) {
-				if ((dpd.DataType == PTP_DTC_UINT16) && (dpd.CurrentValue.u16 == 3)) {
-					manualfocus = 1;
-					/* will do 1 pass through the focusing loop for good measure */
-					GP_LOG_D("detected manual focus. skipping focus detection logic");
-				}
-			}
-			ret = GP_OK;
-			/* half press now - initiate focusing and wait for result */
-			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 1, 0), _("Canon EOS Half-Press failed"));
+			// /* are we in manual focus mode ... value would be 3 */
+			// if (PTP_RC_OK == ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_FocusMode, &dpd)) {
+			// 	if ((dpd.DataType == PTP_DTC_UINT16) && (dpd.CurrentValue.u16 == 3)) {
+			// 		manualfocus = 1;
+			// 		/* will do 1 pass through the focusing loop for good measure */
+			// 		GP_LOG_D("detected manual focus. skipping focus detection logic");
+			// 	}
+			// }
+			// ret = GP_OK;
+			// /* half press now - initiate focusing and wait for result */
+			// C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 1, 0), _("Canon EOS Half-Press failed"));
 
-			focus_start = time_now();
-			do {
-				int foundevents = 0;
+			// focus_start = time_now();
+			// do {
+			// 	int foundevents = 0;
 
-				C_PTP_REP_MSG (ptp_check_eos_events (params), _("Canon EOS Get Changes failed"));
-				while (ptp_get_one_eos_event (params, &entry)) {
-					foundevents = 1;
-					GP_LOG_D("focusing - read event type %d", entry.type);
-					if (entry.type == PTP_CANON_EOS_CHANGES_TYPE_FOCUSINFO) {
-						GP_LOG_D("focusinfo content: %s", entry.u.info);
-						foundfocusinfo = 1;
-						if (strstr(entry.u.info,"0000200")) {
-							gp_context_error (context, _("Canon EOS Capture failed to release: Perhaps no focus?"));
-							ret = GP_ERROR;
-						}
-					}
-					if (	(entry.type == PTP_CANON_EOS_CHANGES_TYPE_PROPERTY) &&
-						(entry.u.propid == PTP_DPC_CANON_EOS_FocusInfoEx)
-					) {
-						if (PTP_RC_OK == ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_FocusInfoEx, &dpd)) {
-							GP_LOG_D("focusinfo prop content: %s", dpd.CurrentValue.str);
-							foundfocusinfo = 1;
-							/* FIXME: detect no focus? */
-						}
-					}
-				}
-				/* We found focus information, so half way pressing has finished! */
-				if (foundfocusinfo)
-					break;
-				/* for manual focus, at least wait until we get events */
-				if (manualfocus && foundevents)
-					break;
-				/* when doing manual focus, wait at most 0.1 seconds */
-				if (manualfocus && (time_since (focus_start) >= 100))
-					break;
-			} while (waiting_for_timeout (&back_off_wait, focus_start, 2*1000)); /* wait 2 seconds for focus */
+			// 	C_PTP_REP_MSG (ptp_check_eos_events (params), _("Canon EOS Get Changes failed"));
+			// 	while (ptp_get_one_eos_event (params, &entry)) {
+			// 		foundevents = 1;
+			// 		GP_LOG_D("focusing - read event type %d", entry.type);
+			// 		if (entry.type == PTP_CANON_EOS_CHANGES_TYPE_FOCUSINFO) {
+			// 			GP_LOG_D("focusinfo content: %s", entry.u.info);
+			// 			foundfocusinfo = 1;
+			// 			if (strstr(entry.u.info,"0000200")) {
+			// 				gp_context_error (context, _("Canon EOS Capture failed to release: Perhaps no focus?"));
+			// 				ret = GP_ERROR;
+			// 			}
+			// 		}
+			// 		if (	(entry.type == PTP_CANON_EOS_CHANGES_TYPE_PROPERTY) &&
+			// 			(entry.u.propid == PTP_DPC_CANON_EOS_FocusInfoEx)
+			// 		) {
+			// 			if (PTP_RC_OK == ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_FocusInfoEx, &dpd)) {
+			// 				GP_LOG_D("focusinfo prop content: %s", dpd.CurrentValue.str);
+			// 				foundfocusinfo = 1;
+			// 				/* FIXME: detect no focus? */
+			// 			}
+			// 		}
+			// 	}
+			// 	/* We found focus information, so half way pressing has finished! */
+			// 	if (foundfocusinfo)
+			// 		break;
+			// 	/* for manual focus, at least wait until we get events */
+			// 	if (manualfocus && foundevents)
+			// 		break;
+			// 	/* when doing manual focus, wait at most 0.1 seconds */
+			// 	if (manualfocus && (time_since (focus_start) >= 100))
+			// 		break;
+			// } while (waiting_for_timeout (&back_off_wait, focus_start, 2*1000)); /* wait 2 seconds for focus */
 
-			if (!foundfocusinfo && !manualfocus) {
-				GP_LOG_E("no focus info?\n");
-			}
-			if (ret != GP_OK) {
-				C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 1), _("Canon EOS Half-Release failed"));
-				return ret;
-			}
-			/* full press now */
+			// if (!foundfocusinfo && !manualfocus) {
+			// 	GP_LOG_E("no focus info?\n");
+			// }
+			// if (ret != GP_OK) {
+			// 	C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 1), _("Canon EOS Half-Release failed"));
+			// 	return ret;
+			// }
+			// /* full press now */
 
-			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 2, 0), _("Canon EOS Full-Press failed"));
+			// C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 2, 0), _("Canon EOS Full-Press failed"));
+			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 3, 1), _("Canon EOS Full-Press failed"));
+			
+
 			/* no event check between */
 			/* full release now */
-			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 2), _("Canon EOS Full-Release failed"));
+			// C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 2), _("Canon EOS Full-Release failed"));
+			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 3), _("Canon EOS Full-Release failed"));
 			ptp_check_eos_events (params);
 
 			/* half release now */
-			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 1), _("Canon EOS Half-Release failed"));
+			// C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 1), _("Canon EOS Half-Release failed"));
 		} else {
 			/* Canon EOS M series */
 			int button = 0, eos_m_focus_done = 0;
