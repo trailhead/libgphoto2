@@ -17,6 +17,7 @@ gp_camera_autodetect
 gp_camera_capture
 gp_camera_capture_preview
 gp_camera_exit
+gp_camera_prime_filesystem_cache
 gp_camera_file_delete
 gp_camera_file_get
 gp_camera_file_get_info

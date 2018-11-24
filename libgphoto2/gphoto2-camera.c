@@ -1453,6 +1453,62 @@ gp_camera_wait_for_event (Camera *camera, int timeout,
 	return (GP_OK);
 }
 
+static int
+internal_prime_cache_folder(Camera *camera, const char *folder, GPContext *context)
+{
+	CameraList *list;
+	int result = GP_OK;
+	char buf[1024];
+	const char *name;
+	int count;
+	int i;
+
+	result = gp_list_new (&list);
+	if (result < GP_OK)
+		return result;
+
+	CHECK_RESULT_OPEN_CLOSE (camera, gp_filesystem_list_folders (camera->fs, folder,
+						list, context), context);
+
+	count = gp_list_count (list);
+
+	for (i = 0; i < count; i++) {
+	  gp_list_get_name (list, i, &name);
+
+		int len = strlen(folder);
+		if (len == 1) {
+			snprintf(buf, sizeof(buf), "/%s", name);
+		} else {
+			snprintf(buf, sizeof(buf), "%s/%s", folder, name);
+		}
+		internal_prime_cache_folder(camera, buf, context);
+	}
+	gp_list_free (list);
+}
+
+/**
+ * \brief Pre-loads the cache of files and folders by reading from the camera
+ * \param fs a #CameraFilesystem
+ *
+ * Pre-loads the cache of files and folders by reading from the camera.
+ *
+ * \return a gphoto2 error code.
+ **/
+int
+gp_camera_prime_filesystem_cache (Camera *camera, GPContext *context)
+{
+	int ret = GP_OK;
+	C_PARAMS (camera);
+	CHECK_INIT (camera, context);
+
+	printf("about to prime cache\n");
+	ret = internal_prime_cache_folder(camera, "/", context);
+
+	CAMERA_UNUSED (camera, context);
+
+	return ret;
+}
+
 /**
  * Lists the files in supplied \c folder.
  *

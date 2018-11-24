@@ -417,6 +417,8 @@ int gp_camera_get_storageinfo    (Camera *camera, CameraStorageInformation**,
 /** \name Operations on folders 
  * @{
  */
+int gp_camera_prime_filesystem_cache (Camera *camera,
+					 GPContext *context);
 int gp_camera_folder_list_files   (Camera *camera, const char *folder, 
 				   CameraList *list, GPContext *context);
 int gp_camera_folder_list_folders (Camera *camera, const char *folder, 
