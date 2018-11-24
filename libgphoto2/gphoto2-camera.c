@@ -1501,7 +1501,7 @@ gp_camera_prime_filesystem_cache (Camera *camera, GPContext *context)
 	C_PARAMS (camera);
 	CHECK_INIT (camera, context);
 
-	printf("about to prime cache\n");
+	GP_LOG_D ("Priming filesystem cache from camera");
 	ret = internal_prime_cache_folder(camera, "/", context);
 
 	CAMERA_UNUSED (camera, context);
