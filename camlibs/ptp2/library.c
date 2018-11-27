@@ -5740,6 +5740,7 @@ camera_wait_for_event (Camera *camera, int timeout,
 						return GP_OK;
 					} else {
 						if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+							GP_LOG_D ("Disabling filesystem cache before gp_filesystem_append");
 							gp_filesystem_disable_cache_check();
 						}
 						CR (gp_filesystem_append (camera->fs, path->folder,
@@ -5747,6 +5748,7 @@ camera_wait_for_event (Camera *camera, int timeout,
 						*eventtype = GP_EVENT_FILE_ADDED;
 						*eventdata = path;
 						if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+							GP_LOG_D ("Enabling filesystem cache after gp_filesystem_append");
 							gp_filesystem_enable_cache_check();
 						}
 						return GP_OK;
@@ -5785,10 +5787,12 @@ downloadnow:
 						return ret;
 					}
 					if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+						GP_LOG_D ("Disabling filesystem cache before gp_filesystem_append");
 						gp_filesystem_disable_cache_check();
 					}
 					ret = gp_filesystem_append(camera->fs, path->folder, path->name, context);
 					if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+						GP_LOG_D ("Enabling filesystem cache after gp_filesystem_append");
 						gp_filesystem_enable_cache_check();
 					}
 					if (ret != GP_OK) {

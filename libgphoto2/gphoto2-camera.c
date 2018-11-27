@@ -243,7 +243,7 @@ struct _CameraPrivateCore {
 	unsigned int           timeout_ids_len;
 };
 
-static int enable_cache_check_in_wait = GP_WAIT_FOR_EVENT_NO_CACHE;
+static int enable_cache_check_in_wait = GP_WAIT_FOR_EVENT_DEFAULT_CACHE;
 
 /**
  * Do not cache filesystem after object added.
