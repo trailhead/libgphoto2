@@ -5739,10 +5739,16 @@ camera_wait_for_event (Camera *camera, int timeout,
 						/* if this was the last current event ... stop and return the folder add */
 						return GP_OK;
 					} else {
+						if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+							gp_filesystem_disable_cache_check();
+						}
 						CR (gp_filesystem_append (camera->fs, path->folder,
 						path->name, context));
 						*eventtype = GP_EVENT_FILE_ADDED;
 						*eventdata = path;
+						if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+							gp_filesystem_enable_cache_check();
+						}
 						return GP_OK;
 					}
 					break;
@@ -5778,7 +5784,13 @@ downloadnow:
 						gp_file_free (file);
 						return ret;
 					}
+					if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+						gp_filesystem_disable_cache_check();
+					}
 					ret = gp_filesystem_append(camera->fs, path->folder, path->name, context);
+					if (gp_camera_get_wait_cache_mode() == GP_WAIT_FOR_EVENT_NO_CACHE) {
+						gp_filesystem_enable_cache_check();
+					}
 					if (ret != GP_OK) {
 						gp_file_free (file);
 						return ret;

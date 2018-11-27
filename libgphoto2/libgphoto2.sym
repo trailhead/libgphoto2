@@ -17,6 +17,11 @@ gp_camera_autodetect
 gp_camera_capture
 gp_camera_capture_preview
 gp_camera_exit
+gp_filesystem_enable_cache_check
+gp_filesystem_disable_cache_check
+gp_camera_wait_for_event_no_cache
+gp_camera_wait_for_event_default_cache
+gp_camera_get_wait_cache_mode
 gp_camera_file_delete
 gp_camera_file_get
 gp_camera_file_get_info

@@ -375,6 +375,18 @@ int gp_camera_exit               (Camera *camera, GPContext *context);
 /**@}*/
  
 
+/** \name Filesystem caching behavior
+ * @{
+ */
+#define GP_WAIT_FOR_EVENT_NO_CACHE				0
+#define GP_WAIT_FOR_EVENT_DEFAULT_CACHE		1
+
+void gp_camera_wait_for_event_no_cache(void);
+void gp_camera_wait_for_event_default_cache(void);
+int gp_camera_get_wait_cache_mode(void);
+
+/**@}*/
+
 
 /** \name Operations on cameras 
  * @{ 

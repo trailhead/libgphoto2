@@ -243,6 +243,27 @@ struct _CameraPrivateCore {
 	unsigned int           timeout_ids_len;
 };
 
+static int enable_cache_check_in_wait = GP_WAIT_FOR_EVENT_NO_CACHE;
+
+/**
+ * Do not cache filesystem after object added.
+ */
+void gp_camera_wait_for_event_no_cache(void) {
+	GP_LOG_D ("camera_wait_for_event set to skip caching behavior");
+	enable_cache_check_in_wait = GP_WAIT_FOR_EVENT_NO_CACHE;	
+}
+
+/**
+ * Do cache filesystem after object added (default behavior).
+ */
+void gp_camera_wait_for_event_default_cache(void) {
+	GP_LOG_D ("camera_wait_for_event set to use default filesystem caching behavior");
+	enable_cache_check_in_wait = GP_WAIT_FOR_EVENT_DEFAULT_CACHE;	
+}
+
+int gp_camera_get_wait_cache_mode() {
+	return enable_cache_check_in_wait;
+}
 
 /**
  * Close connection to camera.

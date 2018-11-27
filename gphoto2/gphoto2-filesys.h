@@ -236,6 +236,11 @@ typedef struct _CameraFilesystem CameraFilesystem;
 int gp_filesystem_new	 (CameraFilesystem **fs);
 int gp_filesystem_free	 (CameraFilesystem *fs);
 
+void gp_filesystem_enable_cache_check(void);
+void gp_filesystem_disable_cache_check(void);
+void gp_camera_wait_for_event_no_cache(void);
+void gp_camera_wait_for_event_default_cache(void);
+
 /* Manual editing */
 int gp_filesystem_append           (CameraFilesystem *fs, const char *folder,
 			            const char *filename, GPContext *context);

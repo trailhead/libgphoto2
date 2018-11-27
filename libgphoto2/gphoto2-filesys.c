@@ -302,6 +302,18 @@ struct _CameraFilesystem {
 	}								\
 }
 
+static int enable_cache_check = 0;
+
+void gp_filesystem_disable_cache_check(void) {
+	GP_LOG_D ("Disabling filesystem cache check");
+	enable_cache_check = 0;	
+}
+
+void gp_filesystem_enable_cache_check(void) {
+	GP_LOG_D ("Enabling filesystem cache check");
+	enable_cache_check = 1;	
+}
+
 static int
 delete_all_files (CameraFilesystem *fs, CameraFilesystemFolder *folder)
 {
@@ -753,17 +765,23 @@ gp_filesystem_append (CameraFilesystem *fs, const char *folder,
 	GP_LOG_D ("Append %s/%s to filesystem", folder, filename);
 	/* Check folder for existence, if not, create it. */
 	f = lookup_folder (fs, fs->rootfolder, folder, context);
-	if (!f)
+	if (!f)	{
 		CR (append_folder (fs, folder, &f, context));
-	if (f->files_dirty) { /* Need to load folder from driver first ... capture case */
-		CameraList	*xlist;
-		int ret;
+	}
+	if (enable_cache_check) {
+		if (f->files_dirty) { /* Need to load folder from driver first ... capture case */
+			CameraList	*xlist;
+			int ret;
 
-		ret = gp_list_new (&xlist);
-		if (ret != GP_OK) return ret;
-		ret = gp_filesystem_list_files (fs, folder, xlist, context);
-		gp_list_free (xlist);
-		if (ret != GP_OK) return ret;
+			ret = gp_list_new (&xlist);
+			if (ret != GP_OK) return ret;
+
+			ret = gp_filesystem_list_files (fs, folder, xlist, context);
+			gp_list_free (xlist);
+			if (ret != GP_OK) return ret;
+		}
+	} else {
+		GP_LOG_D ("Skipped files_dirty cache check");
 	}
 	ret = internal_append (fs, f, filename, context);
 	if (ret == GP_ERROR_FILE_EXISTS) /* not an error here ... just in case we add files twice to the list */
