@@ -3200,9 +3200,9 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 	double lastfChange          					= 0.0;
 	double lastfStep 											= 0.0;
 	double fChangeErrorTimeout 			      = 5.0f;  // No change for x seconds times out
-	double fChangeRecalcBaseTimeout 		  = 0.5f;  // The quickest we can expect a step to complete
-	double fChangeRecalcPerStepTimeout 		= 0.05f; //
-	double fStepDelay 										= 0.07f;
+	double fChangeRecalcBaseTimeout 		  = 0.6f;  // The quickest we can expect a step to complete
+	double fChangeRecalcPerStepTimeout 		= 0.1f; //
+	double fStepDelay 										= 0.08f;
 
 	struct timeval tv;
 
