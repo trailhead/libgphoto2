@@ -1748,7 +1748,7 @@ _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
 	char *targetStopsStr;
 	uint16_t targetStopsU = 0;
 
-	float lastValuef = -100;
+	float fLastValue = -100;
 	uint16_t stuckCount = 0;
 
 	PTPDevicePropDesc	dpd2;
@@ -1833,7 +1833,7 @@ _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
 		}
 
 		// Check to make sure we're not stuck not movie
-		if (lastValuef != -100 && abs(currentStops - lastValuef) < 0.3) {
+		if (fLastValue != -100 && abs(currentStops - fLastValue) < 0.3) {
 			stuckCount += 1;
 			if (stuckCount > 3) {
 				// printf("No movement\n");
@@ -1843,7 +1843,7 @@ _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
 		} else {
 			stuckCount = 0;
 		}
-		lastValuef = currentStops;
+		fLastValue = currentStops;
 
 		if (abs(moves) < 10) {
 			usleep(800000);
@@ -3104,8 +3104,8 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 	PTPPropertyValue	moveval;
 	float targetf, currentf, targetStops, currentStops, moves;
 
-	float maxApertureStops = 12;
-	float lastValuef = 0;
+	float fMaxStops = 12;
+	float fLastValue = 0;
 
 	struct timeval tv;
 	double startTime, endTime;
@@ -3120,7 +3120,7 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
   return put_Sony_F_and_ISO(camera, targetf, 400);
 
 
-	targetStops = maxApertureStops - (float)(log(targetf*targetf) / log(2));
+	targetStops = fMaxStops - (float)(log(targetf*targetf) / log(2));
 
 	do {
 
@@ -3130,7 +3130,7 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 		currentf = ((float)dpd->CurrentValue.u16) / 100.0;
 
 		// Check how many stops we need to move
-		currentStops = maxApertureStops - (float)(log(currentf*currentf) / log(2));
+		currentStops = fMaxStops - (float)(log(currentf*currentf) / log(2));
 
 		// How many moves to get to the target (assumes camera is setup for 1/3rd stops)
 		moves = (currentStops - targetStops) * 3;
@@ -3161,11 +3161,11 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 		}
 
 		// Check to make sure we're not stuck not movie
-		if (lastValuef != 0 && abs(currentf - lastValuef) < 0.3) {
+		if (fLastValue != 0 && abs(currentf - fLastValue) < 0.3) {
 			// No movement
 			break;
 		}
-		lastValuef = currentf;
+		fLastValue = currentf;
 
 		usleep(800000);
 	} while(1);
@@ -3187,18 +3187,18 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 	PTPPropertyValue	moveval;
 	PTPDevicePropDesc dpd;
 	uint8_t fComplete, isoComplete;
-	uint8_t stepsRemain 									= 0;
-	uint8_t stepsLastCalc 								= 1;
-	uint8_t stepsTotalSent                = 0;
+	uint8_t fStepsRemain 									= 0;
+	uint8_t fStepsLastCalc 								= 1;
+	uint8_t fStepsTotalSent               = 0;
 	float currentf, targetStops, currentStops, moves;
 	
-	float maxApertureStops 								= 12;
-	float lastValuef 											= 0.0;
+	float fMaxStops 							      	= 12;
+	float fLastValue 											= 0.0;
 
 	double startTime, endTime;
 	double loopStartTime, loopEndTime;
-	double lastfChange          					= 0.0;
-	double lastfStep 											= 0.0;
+	double fLastChange          					= 0.0;
+	double fLastChange 										= 0.0;
 	double fChangeErrorTimeout 			      = 5.0f;  // No change for x seconds times out
 	double fChangeRecalcBaseTimeout 		  = 0.6f;  // The quickest we can expect a step to complete
 	double fChangeRecalcPerStepTimeout 		= 0.1f; //
@@ -3211,34 +3211,34 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 
 	gettimeofday(&tv, NULL);
 	startTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
-	lastfChange = startTime;
+	fLastChange = startTime;
 
-	targetStops = maxApertureStops - (float)(log(targetf*targetf) / log(2));
+	targetStops = fMaxStops - (float)(log(targetf*targetf) / log(2));
 
 	printf("Target F = %lf\n", targetf);
 
 	do {
 		gettimeofday(&tv, NULL);
 		loopStartTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
-		printf("Loop %u start time = %lf\n", stepsTotalSent, loopStartTime - startTime);
+		printf("Loop %u start time = %lf\n", fStepsTotalSent,loopStartTime - startTime);
 		
 		if (fComplete == FALSE) {
 			C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
 			C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_FNumber, &dpd));
 
 			currentf = ((float)dpd.CurrentValue.u16) / 100.0;
-			printf("Last F = %lf\n", lastValuef);
+			printf("Last F = %lf\n", fLastValue);
 			printf("Current F = %lf\n", currentf);
-			printf("Last F change = %lf\n", (lastfChange == 0.0f) ? 0.0f : lastfChange - startTime);
-      printf("Change will timeout at = %lf\n", lastfChange + fChangeErrorTimeout - startTime);
-			printf("stepsRemain = %u\n", stepsRemain);
+			printf("Last F change = %lf\n", (fLastChange == 0.0f) ? 0.0f : fLastChange - startTime);
+      printf("Change will timeout at = %lf\n", fLastChange + fChangeErrorTimeout - startTime);
+			printf("fStepsRemain = %u\n", fStepsRemain);
 
 			// Check to make sure we're not stuck not movie
-			if (stepsTotalSent > 0) {
-				if (fabs(currentf - lastValuef) < 0.3f) {
+			if (fStepsTotalSent  0) {
+				if (fabs(currentf - fLastValue) < 0.3f) {
 					// No movement
 					printf("No movement\n");
-					if (lastfChange + fChangeErrorTimeout < loopStartTime) {
+					if (fLastChange + fChangeErrorTimeout < loopStartTime) {
 						// Change error timeout exceeded
 						printf("Timed out for no movement\n");
 						break;
@@ -3246,12 +3246,12 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 				} else {
 					// Record time of last change for timeout
 					printf("Something changed, recording time\n");
-					lastfChange = loopStartTime;
+					fLastChange = loopStartTime;
 				}
 			}
 
 			// Check how many stops we need to move
-			currentStops = maxApertureStops - (float)(log(currentf*currentf) / log(2));
+			currentStops = fMaxStops - (float)(log(currentf*currentf) / log(2));
 
 			// How many moves to get to the target (assumes camera is setup for 1/3rd stops)
 			moves = (currentStops - targetStops) * 3;
@@ -3265,47 +3265,47 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 				printf("Not yet at target.\n");
 
 				// Ensure fStepDelay seconds have elapsed
-				if (stepsTotalSent == 0 || lastfStep + fStepDelay < loopStartTime) {
+				if (fStepsTotalSent = 0 || fLastChange +fStepDelay < loopStartTime) {
 					printf("Enough time has passed for a step.\n");
-					printf("Last F change = %lf\n", (lastfChange == 0.0f) ? 0.0f : lastfChange - startTime);
-					if (lastfChange < 0.1) {
-						printf("lastfChange is zero\n");
+					printf("Last F change = %lf\n", (fLastChange == 0.0f) ? 0.0f : fLastChange - startTime);
+					if (fLastChange < 0.1) {
+						printf("fLastChange is zero\n");
 					} else {
-						printf("lastfChange is NOT zero\n");
+						printf("fLastChange is NOT zero\n");
 					}
 					// If no steps remain and recalc timeout since last change has passed, recalculate because we're not there yet
-					if (stepsRemain == 0 &&
-						 (stepsTotalSent == 0 || lastfChange + fChangeRecalcBaseTimeout + (fChangeRecalcPerStepTimeout * stepsLastCalc) < loopStartTime)) {
-						stepsRemain = abs(round(moves));
-						stepsLastCalc = stepsRemain;
+					if (fStepsRemain == 0 &&
+						 (fStepsTotalSent = 0 || fLastChange + fChangeRecalcBaseTimeout + (fChangeRecalcPerStepTimeout * fStepsLastCalc) < loopStartTime)) {
+						fStepsRemain = abs(round(moves));
+						fStepsLastCalc = fStepsRemain;
 
 						printf("Moves = %lf\n", moves);
 						printf("abs(round(moves)) = %u\n", (uint8_t)abs(round(moves)));
-						printf("Setting steps remain to = %u\n", stepsRemain);
+						printf("Setting steps remain to = %u\n", fStepsRemain);
 					} else {
 						printf("Not time to recalc yet.\n");
 					}
 
 					// If we still have steps to send, send one now
-					if (stepsRemain > 0 && lastfStep + fStepDelay < loopStartTime) {
+					if (fStepsRemain > 0 && fLastChange +fStepDelay < loopStartTime) {
 						if (moves > 0) {
 							moveval.u8 = 0x01;
 						} else {
 							moveval.u8 = 0xff;
 						}
 
-						printf("Stepping - lastfStep = %lf\n", lastfStep - startTime);
+						printf("Stepping - fLastChange =%lf\n", fLastChange -startTime);
 						C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_FNumber, &moveval, PTP_DTC_UINT8 ));
-						lastfStep = loopStartTime;
-						stepsTotalSent++;
-						stepsRemain--;
+						fLastChange =loopStartTime;
+						fStepsTotalSent+;
+						fStepsRemain--;
 					}
 				} else {
 					printf("Not time to step yet.\n");
 				}
 			}
 
-			lastValuef = currentf;
+			fLastValue = currentf;
 
 			usleep(50000);
 		}
@@ -3326,7 +3326,7 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 	endTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
 
 	printf("Exiting - cycle time = %lf\n", endTime - startTime);
-	printf("%u steps sent\n", stepsTotalSent);
+	printf("%u steps sent\n", fStepsTotalSent)
 
 	return GP_OK;
 }
