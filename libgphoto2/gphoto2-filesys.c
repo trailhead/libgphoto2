@@ -441,6 +441,18 @@ lookup_folder_file (
 	GP_LOG_D ("Lookup folder %s file %s", folder, filename);
 	xf = lookup_folder (fs, fs->rootfolder, folder, context);
 	if (!xf) return GP_ERROR_DIRECTORY_NOT_FOUND;
+
+	/* Do an initial scan of the files to see if we already have this file */
+	f = xf->files;
+	while (f) {
+		if (!strcmp (f->name, filename)) {
+			*xfile = f;
+			*xfolder = xf;
+			return GP_OK;
+		}
+		f = f->next;
+	}
+
 	/* Check if we need to load the filelist of the folder ... */
 	if (xf->files_dirty) {
 		CameraList	*list;
@@ -458,6 +470,9 @@ lookup_folder_file (
 		}
 		if (ret != GP_OK)
 			GP_LOG_D ("Making folder %s clean failed: %d", folder, ret);
+	} else {
+		/* Files were not dirty so we know we don't have the file. */	
+		return GP_ERROR_FILE_NOT_FOUND;
 	}
 
 	f = xf->files;
@@ -755,7 +770,7 @@ gp_filesystem_append (CameraFilesystem *fs, const char *folder,
 	f = lookup_folder (fs, fs->rootfolder, folder, context);
 	if (!f)
 		CR (append_folder (fs, folder, &f, context));
-	if (f->files_dirty) { /* Need to load folder from driver first ... capture case */
+	if (0) { //f->files_dirty) { /* Need to load folder from driver first ... capture case */
 		CameraList	*xlist;
 		int ret;
 
