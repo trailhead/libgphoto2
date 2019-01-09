@@ -52,6 +52,32 @@ test_filesys_LDADD = \
 	$(LIBEXIF_LIBS) \
 	$(INTLLIBS)
 
+noinst_PROGRAMS += test-fsperf-capture-info-delete
+test_fsperf_capture_info_delete_SOURCE = test-fsperf-capture-info-delete.c
+test_fsperf_capture_info_delete_LDADD = \
+	$(top_builddir)/libgphoto2/libgphoto2.la \
+	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
+	$(LIBLTDL) \
+	$(LIBEXIF_LIBS) \
+	$(INTLLIBS)
+
+noinst_PROGRAMS += test-fsperf-trigger-wait-info-delete
+test_fsperf_trigger_wait_info_delete_SOURCE = test-fsperf-trigger-wait-info-delete.c
+test_fsperf_trigger_wait_info_delete_LDADD = \
+	$(top_builddir)/libgphoto2/libgphoto2.la \
+	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
+	$(LIBLTDL) \
+	$(LIBEXIF_LIBS) \
+	$(INTLLIBS)
+
+noinst_PROGRAMS += test-fsperf-trigger-wait-info-get-file-delete
+test_fsperf_trigger_wait_info_get_file_delete_SOURCE = ttest-fsperf-trigger-wait-info-get-file-delete.c
+test_fsperf_trigger_wait_info_get_file_delete_LDADD = \
+	$(top_builddir)/libgphoto2/libgphoto2.la \
+	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
+	$(LIBLTDL) \
+	$(LIBEXIF_LIBS) \
+	$(INTLLIBS)
 
 
 TESTS += test-camera-list
@@ -64,7 +90,6 @@ test_camera_list_LDADD = \
 	$(LIBLTDL) \
 	$(LIBEXIF_LIBS) \
 	$(INTLLIBS)
-
 
 if HAVE_GCC
 PEDANTIC_CFLAGS = -std=c99 -pedantic-errors -W -Wall -Wextra -Werror

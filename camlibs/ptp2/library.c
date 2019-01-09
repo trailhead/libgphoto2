@@ -6494,7 +6494,7 @@ camera_summary (Camera* camera, CameraText* summary, GPContext *context)
 static uint32_t
 find_child (PTPParams *params,const char *file,uint32_t storage,uint32_t handle,PTPObject **retob)
 {
-	unsigned int	i;
+	unsigned int	i, index;
 	uint16_t	ret;
 
 	ret = ptp_list_folder (params, storage, handle);
@@ -6502,7 +6502,15 @@ find_child (PTPParams *params,const char *file,uint32_t storage,uint32_t handle,
 		return PTP_HANDLER_SPECIAL;
 
 	for (i = 0; i < params->nrofobjects; i++) {
-		PTPObject	*ob = &params->objects[i];
+
+		if (!gp_camera_get_filesys_optimize()) {
+			// Iterate forward (default)
+			index = i;
+		} else {
+			// Iterate backwards through list to find most recent items quickly.
+			index = params->nrofobjects - 1 - i;
+		}
+		PTPObject	*ob = &params->objects[index];
 		uint32_t	oid = ob->oid;
 
 		ret = PTP_RC_OK;
