@@ -442,15 +442,17 @@ lookup_folder_file (
 	xf = lookup_folder (fs, fs->rootfolder, folder, context);
 	if (!xf) return GP_ERROR_DIRECTORY_NOT_FOUND;
 
-	/* Do an initial scan of the files to see if we already have this file */
-	f = xf->files;
-	while (f) {
-		if (!strcmp (f->name, filename)) {
-			*xfile = f;
-			*xfolder = xf;
-			return GP_OK;
+	if (gp_camera_get_filesys_optimize()) {
+		/* Do an initial scan of the files to see if we already have this file */
+		f = xf->files;
+		while (f) {
+			if (!strcmp (f->name, filename)) {
+				*xfile = f;
+				*xfolder = xf;
+				return GP_OK;
+			}
+			f = f->next;
 		}
-		f = f->next;
 	}
 
 	/* Check if we need to load the filelist of the folder ... */
