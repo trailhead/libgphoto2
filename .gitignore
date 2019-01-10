@@ -124,4 +124,5 @@ tests/test-gphoto2
 tests/test-fsperf-capture-info-delete
 tests/test-fsperf-trigger-wait-info-delete
 tests/test-fsperf-trigger-wait-info-get-file-delete
+tests/test-fsperf-capture-preview
 +.vscode/
