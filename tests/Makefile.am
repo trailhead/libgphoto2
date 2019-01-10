@@ -44,7 +44,7 @@ test_gphoto2_LDADD = \
 	$(INTLLIBS)
 
 noinst_PROGRAMS += test-filesys
-test_filesys_SOURCE = test-filesys.c
+test_filesys_SOURCES = test-filesys.c
 test_filesys_LDADD = \
 	$(top_builddir)/libgphoto2/libgphoto2.la \
 	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
@@ -53,7 +53,7 @@ test_filesys_LDADD = \
 	$(INTLLIBS)
 
 noinst_PROGRAMS += test-fsperf-capture-info-delete
-test_fsperf_capture_info_delete_SOURCE = test-fsperf-capture-info-delete.c
+test_fsperf_capture_info_delete_SOURCES = test-fsperf-capture-info-delete.c test-fsperf-funcs.c
 test_fsperf_capture_info_delete_LDADD = \
 	$(top_builddir)/libgphoto2/libgphoto2.la \
 	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
@@ -62,7 +62,7 @@ test_fsperf_capture_info_delete_LDADD = \
 	$(INTLLIBS)
 
 noinst_PROGRAMS += test-fsperf-trigger-wait-info-delete
-test_fsperf_trigger_wait_info_delete_SOURCE = test-fsperf-trigger-wait-info-delete.c
+test_fsperf_trigger_wait_info_delete_SOURCES = test-fsperf-trigger-wait-info-delete.c test-fsperf-funcs.c
 test_fsperf_trigger_wait_info_delete_LDADD = \
 	$(top_builddir)/libgphoto2/libgphoto2.la \
 	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
@@ -71,8 +71,17 @@ test_fsperf_trigger_wait_info_delete_LDADD = \
 	$(INTLLIBS)
 
 noinst_PROGRAMS += test-fsperf-trigger-wait-info-get-file-delete
-test_fsperf_trigger_wait_info_get_file_delete_SOURCE = ttest-fsperf-trigger-wait-info-get-file-delete.c
+test_fsperf_trigger_wait_info_get_file_delete_SOURCES = test-fsperf-trigger-wait-info-get-file-delete.c test-fsperf-funcs.c
 test_fsperf_trigger_wait_info_get_file_delete_LDADD = \
+	$(top_builddir)/libgphoto2/libgphoto2.la \
+	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
+	$(LIBLTDL) \
+	$(LIBEXIF_LIBS) \
+	$(INTLLIBS)
+
+noinst_PROGRAMS += test-fsperf-capture-preview
+test_fsperf_capture_preview_SOURCES = test-fsperf-capture-preview.c test-fsperf-funcs.c
+test_fsperf_capture_preview_LDADD = \
 	$(top_builddir)/libgphoto2/libgphoto2.la \
 	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
 	$(LIBLTDL) \
