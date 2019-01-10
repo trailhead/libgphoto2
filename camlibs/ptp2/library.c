@@ -213,6 +213,9 @@ static int
 waiting_for_timeout (int *current_wait, struct timeval start, int timeout) {
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
         int time_to_timeout = timeout - time_since (start);
+
+	if (time_to_timeout <= 0) /* we timed out already ... */
+		return 0;
         *current_wait += 50; /* increase sleep time by 50ms per cycle */
         if (*current_wait > 200)
                 *current_wait = 200; /* 200ms is the maximum sleep time */
@@ -338,7 +341,9 @@ fixup_cached_deviceinfo (Camera *camera, PTPDeviceInfo *di) {
 	}
 
 	/* Newer Canons say that they are MTP devices. Restore Canon vendor extid. */
-	if (	(di->VendorExtensionID == PTP_VENDOR_MICROSOFT) &&
+	if (	(	(di->VendorExtensionID == PTP_VENDOR_MICROSOFT)  || 
+			(di->VendorExtensionID == PTP_VENDOR_MTP)
+		) &&
 		(camera->port->type == GP_PORT_USB) &&
 		(a.usb_vendor == 0x4a9)
 	) {
@@ -347,7 +352,9 @@ fixup_cached_deviceinfo (Camera *camera, PTPDeviceInfo *di) {
 	}
 
 	/* Newer Nikons (D40) say that they are MTP devices. Restore Nikon vendor extid. */
-	if (	(di->VendorExtensionID == PTP_VENDOR_MICROSOFT) &&
+	if (	(	(di->VendorExtensionID == PTP_VENDOR_MICROSOFT) ||
+			(di->VendorExtensionID == PTP_VENDOR_MTP)
+		) &&
 		(camera->port->type == GP_PORT_USB) &&
 		(a.usb_vendor == 0x4b0)
 	) {
@@ -963,6 +970,8 @@ static struct {
 	/* Thorsten Ludewig <t.ludewig@gmail.com> */
 	{"Sony:Alpha-A3000",	      0x054c, 0x074e, 0},
 
+	/* bertrand.chambon@free.fr */
+	{"Sony:Alpha-A68 (MTP)",      0x054c, 0x0779, 0},
 	/* https://github.com/gphoto/libgphoto2/issues/70 */
 	{"Sony:Alpha-A6300 (MTP)",    0x054c, 0x077a, 0},
 
@@ -1021,35 +1030,46 @@ static struct {
 	/* http://sourceforge.net/p/gphoto/feature-requests/456/ */
 	{"Sony:Alpha-A7S (Control)",    0x054c, 0x0954, PTP_CAP|PTP_CAP_PREVIEW},
 
-	/* Elijah Parker, mail@timelapseplus.com */
-	{"Sony:Alpha-A7III (Control)",  0x054c, 0x0994, PTP_CAP|PTP_CAP_PREVIEW},
+	/* https://github.com/gphoto/libgphoto2/issues/343  */
+	{"Sony:Alpha-A7III (Control)",  0x054c, 0x096f, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* https://sourceforge.net/p/gphoto/feature-requests/472/ */
-	{"Sony:DSC-HX90V (MTP)",        0x054c, 0x09e8, 0},
+	{"Sony:DSC-HX90V (MTP)",        	0x054c, 0x09e8, 0},
 
 	/* titan232@gmail.com */
-	{"Sony:ILCE-7M2 (Control)",     0x054c, 0x0a6a, PTP_CAP|PTP_CAP_PREVIEW},
+	{"Sony:ILCE-7M2 (Control)",     	0x054c, 0x0a6a, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Andre Crone, andre@elysia.nl */
-	{"Sony:Alpha-A7r II (Control)",	0x054c, 0x0a6b, PTP_CAP|PTP_CAP_PREVIEW},
+	{"Sony:Alpha-A7r II (Control)",		0x054c, 0x0a6b, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Andre Crone <andre@elysia.nl> */
-	{"Sony:DSC-RX100M4",          	0x054c, 0x0a6d, 0},
+	{"Sony:DSC-RX100M4",          		0x054c, 0x0a6d, 0},
 
 	/* Andre Crone <andre@elysia.nl>, adjusted */
-	{"Sony:Alpha-A7S II (Control)",0x054c,0x0a71, PTP_CAP},
+	{"Sony:Alpha-A7S II (Control)",		0x054c,0x0a71, PTP_CAP},
 
 	/* Demo7up <demo7up@gmail.com> */
-	{"Sony:UMC-R10C",		0x054c,0x0a79, 0},
+	{"Sony:UMC-R10C",			0x054c,0x0a79, 0},
+
+	{"Sony:DSC-RX0 (MTP)", 			0x054c, 0x0bfd, 0},
 
 	/* https://github.com/gphoto/libgphoto2/issues/230 */
-	{"Sony:Alpha-A7R III (MTP mode)",0x054c,0x0c00, 0},
+	{"Sony:Alpha-A7R III (MTP mode)",	0x054c,0x0c00, 0},
+
+	/* https://github.com/gphoto/libgphoto2/issues/343 */
+	{"Sony:Alpha-A7 III (MTP mode)",	0x054c,0x0c03, 0},
 
 	/* Elijah Parker, mail@timelapseplus.com */
-	{"Sony:Alpha-A9 (Control)",     0x054c, 0x0c2a, PTP_CAP|PTP_CAP_PREVIEW},
+	{"Sony:Alpha-A9 (Control)",     	0x054c, 0x0c2a, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Richard Brown at SUSE */
-	{"Sony:Alpha-RX10M4 (Control)", 0x054c,0x0c2f, PTP_CAP|PTP_CAP_PREVIEW},
+	{"Sony:Alpha-RX10M4 (Control)", 	0x054c,0x0c2f, PTP_CAP|PTP_CAP_PREVIEW},
+
+	{"Sony:DSC-RX0 (PC Control)",		0x054c, 0x0c32, PTP_CAP|PTP_CAP_PREVIEW},
+
+	/* Mikael Ståldal <mikael@staldal.nu> */
+	{"Sony:DSC-RX100M5A (MTP)",		0x054c, 0x0cb1, 0},
+	{"Sony:DSC-RX100M5A (PC Control)",	0x054c, 0x0cb2, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* https://github.com/gphoto/libgphoto2/issues/230 */
 	/* Elijah Parker, mail@timelapseplus.com */
@@ -1423,6 +1443,14 @@ static struct {
 
 	/* Andre Crone <visuals@elysia.nl> */
 	{"Nikon:DSC D850",                0x04b0, 0x0441, PTP_CAP|PTP_CAP_PREVIEW},
+
+	/* Horshack ?? <horshack@live.com> */
+	{"Nikon:Z7",                	  0x04b0, 0x0442, PTP_CAP|PTP_CAP_PREVIEW},
+
+	/* Marcus Meissner */
+	{"Nikon:Z6",                	  0x04b0, 0x0443, PTP_CAP|PTP_CAP_PREVIEW},
+	/* Schreiber, Steve via Gphoto-devel */
+	{"Nikon:DSC D3500",		  0x04b0, 0x0445, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* http://sourceforge.net/tracker/?func=detail&aid=3536904&group_id=8874&atid=108874 */
 	{"Nikon:V1",    		  0x04b0, 0x0601, PTP_CAP|PTP_NIKON_1},
@@ -1979,6 +2007,9 @@ static struct {
 	/* https://github.com/gphoto/libgphoto2/issues/92 */
 	{"Canon:EOS 5D Mark IV",		0x04a9, 0x3281, PTP_CAP|PTP_CAP_PREVIEW|PTP_DONT_CLOSE_SESSION},
 
+	/* Marcus parents */
+	{"Canon:PowerShot SX600 HS",		0x04a9, 0x3286, PTPBUG_DELETE_SENDS_EVENT},
+
 	/* https://sourceforge.net/p/gphoto/feature-requests/445/ */
 	{"Canon:PowerShot Elph135",		0x04a9, 0x3288, PTPBUG_DELETE_SENDS_EVENT},
 
@@ -2019,16 +2050,23 @@ static struct {
 	/* Andre Crone <andre@elysia.nl */
 	{"Canon:EOS 5DS R",			0x04a9, 0x32af, PTP_CAP|PTP_CAP_PREVIEW|PTP_DONT_CLOSE_SESSION},
 
+	/* Erwin.Segerer@gmx.de */
+	{"Canon:PowerShot G5X",			0x04a9, 0x32b3, PTP_CAP|PTP_CAP_PREVIEW},
+
 	/* Barney Livingston <barney.livingston@lobsterpictures.tv> */
 	{"Canon:EOS 1300D",			0x04a9, 0x32b4, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Jim Howard <jh.xsnrg@gmail.com> */
 	{"Canon:EOS M5",			0x04a9, 0x32bb, PTP_CAP|PTP_CAP_PREVIEW},
 
-	{"Canon:PowerShot G7 X Mark II",        0x04a9, 0x32bc, 0},
+	/* Hubert F */
+	{"Canon:PowerShot G7 X Mark II",        0x04a9, 0x32bc, PTP_CAP|PTP_CAP_PREVIEW},
+
+	/* https://github.com/gphoto/libgphoto2/issues/325 */
+	{"Canon:PowerShot SX540 HS",		0x04a9, 0x32be, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* https://github.com/gphoto/libgphoto2/issues/84 */
-	{"Canon:Digital Ixus 180",		0x04a9, 0x32c0, 0},
+	{"Canon:Digital IXUS 180",		0x04a9, 0x32c0, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* https://github.com/gphoto/libgphoto2/issues/316 */
 	{"Canon:SX 720HS",			0x04a9, 0x32c2, PTP_CAP|PTP_CAP_PREVIEW},
@@ -2038,6 +2076,8 @@ static struct {
 
 	/* Viktors Berstis <gpjm@berstis.com> */
 	{"Canon:EOS Rebel T7i",			0x04a9, 0x32c9, PTP_CAP|PTP_CAP_PREVIEW},
+	/* https://github.com/gphoto/libgphoto2/issues/338 */
+	{"Canon:EOS 800D",			0x04a9, 0x32c9, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Thomas Schaaf <thomas.schaaf@komola.de> */
 	{"Canon:EOS 6d Mark II",		0x04a9, 0x32ca, PTP_CAP|PTP_CAP_PREVIEW},
@@ -2056,6 +2096,12 @@ static struct {
 
 	/* Marcus Meissner */
 	{"Canon:Digital IXUS 185",          	0x04a9, 0x32d4, 0},
+
+	/* Elijah Parker <mail@timelapseplus.com> */
+	{"Canon:EOS R",          		0x04a9, 0x32da, PTP_CAP|PTP_CAP_PREVIEW|PTP_DONT_CLOSE_SESSION},
+
+	/* https://github.com/gphoto/libgphoto2/issues/316 */
+	{"Canon:PowerShot SX740 HS",		0x04a9, 0x32e4, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Jasem Mutlaq <mutlaqja@ikarustech.com> */
 	{"Canon:EOS 4000D",			0x04a9, 0x32d9, PTP_CAP|PTP_CAP_PREVIEW|PTPBUG_DELETE_SENDS_EVENT},
@@ -2164,6 +2210,8 @@ static struct {
 	{"Fuji:Fujifilm X-T1",			0x04cb, 0x02bf, PTP_CAP|PTP_CAP_PREVIEW},
 	/* https://github.com/gphoto/libgphoto2/issues/281 */
 	{"Fuji:Fujifilm X30",			0x04cb, 0x02c1, 0},
+	/* https://sourceforge.net/p/gphoto/feature-requests/464/ */
+	{"Fuji:Fujifilm X-A2",			0x04cb, 0x02c6, 0},
 	/* https://github.com/gphoto/libgphoto2/issues/32 */
 	{"Fuji:Fujifilm X-T10",			0x04cb, 0x02c8, 0},
 	/* with new updated firmware 4.0, https://github.com/gphoto/libgphoto2/issues/220 */
@@ -2204,6 +2252,9 @@ static struct {
 
 	/* Ricoh Caplio GX 8 */
 	{"Ricoh:Caplio GX 8 (PTP mode)",        0x05ca, 0x032d, 0},
+
+	/* Arda Kaan <ardakaan@gmail.com> */
+	{"Ricoh:WG-M2 (PTP mode)",        	0x25fb, 0x210b, 0},
 
 	/* Pentax cameras */
 	{"Pentax:Optio 43WR",                   0x0a17, 0x000d, 0},
@@ -2482,9 +2533,9 @@ camera_abilities (CameraAbilitiesList *list)
 		if (models[i].device_flags & PTP_CAP) {
 			a.operations |= GP_OPERATION_CAPTURE_IMAGE | GP_OPERATION_CONFIG;
 
-			/* Only Nikon *D* cameras for now -Marcus */
+			/* Only Nikon *D* and *Z* cameras for now -Marcus */
 			if (	(models[i].usb_vendor == 0x4b0) &&
-				strchr(models[i].model,'D')
+				(strchr(models[i].model,'D') || strchr(models[i].model,'Z'))
 			)
 				a.operations |= GP_OPERATION_TRIGGER_CAPTURE;
 			/* Also enable trigger capture for EOS capture */
@@ -2692,7 +2743,7 @@ camera_about (Camera *camera, CameraText *text, GPContext *context)
 	   "This driver supports cameras that support PTP or PictBridge(tm), and\n"
 	   "Media Players that support the Media Transfer Protocol (MTP).\n"
 	   "\n"
-	   "Enjoy!"), 2018);
+	   "Enjoy!"), 2019);
 	return (GP_OK);
 }
 
@@ -4142,7 +4193,7 @@ camera_sony_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 	do {
 #if 0
 		/* needed on older cameras like the a58, check for events ... */
-		C_PTP (ptp_check_event (params));
+		C_PTP (ptp_check_event_queue (params));
 		if (ptp_get_one_event(params, &event)) {
 			GP_LOG_D ("during event.code=%04x Param1=%08x", event.Code, event.Param1);
 			if (event.Code == PTP_EC_Sony_ObjectAdded) {
@@ -4893,7 +4944,7 @@ camera_trigger_canon_eos_capture (Camera *camera, GPContext *context)
 	int			back_off_wait = 0;
 	uint32_t		result;
 	struct timeval		focus_start;
-
+	PTPDevicePropDesc	dpd;
 
 	GP_LOG_D ("camera_trigger_canon_eos_capture");
 
@@ -4910,6 +4961,17 @@ camera_trigger_canon_eos_capture (Camera *camera, GPContext *context)
 
 	if (params->eos_camerastatus == 1)
 		return GP_ERROR_CAMERA_BUSY;
+
+	if (have_eos_prop(params, PTP_VENDOR_CANON, PTP_DPC_CANON_EOS_CaptureDestination)) {
+                C_PTP (ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_CaptureDestination, &dpd));
+                if (dpd.CurrentValue.u32 == PTP_CANON_EOS_CAPTUREDEST_HD) {
+			C_PTP (ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_AvailableShots, &dpd));
+			if (dpd.CurrentValue.u32 < 100) {
+				/* Tell the camera we have enough free space on the PC */
+				LOG_ON_PTP_E (ptp_canon_eos_pchddcapacity(params, 0x0fffffff, 0x00001000, 0x00000001));
+			}
+		}
+	}
 
 	if (ptp_operation_issupported(params, PTP_OC_CANON_EOS_RemoteReleaseOn)) {
 		if (!is_canon_eos_m (params)) {
@@ -5880,10 +5942,17 @@ downloadnow:
 
 sonyout:
 			/* If not, check for events and handle them */
-			C_PTP_REP (ptp_check_event(params));
+			if (time_since(event_start) > timeout-100) {
+				/* if there is less than 0.1 seconds, just check the
+				 * queue. with libusb1 this can still make progress,
+				 * as above bulk calls will check and queue new ptp events
+				 * async */
+				C_PTP_REP (ptp_check_event_queue(params));
+			} else {
+				C_PTP_REP (ptp_check_event(params));
+			}
 			if (ptp_get_one_event (params, &event))
 				goto handleregular;
-
 			gp_context_idle (context);
 		} while (waiting_for_timeout (&back_off_wait, event_start, timeout));
 
@@ -6973,7 +7042,7 @@ ptp_mtp_parse_metadata (
 	C_PTP (ptp_mtp_getobjectpropssupported (params, ofc, &propcnt, &props));
 
 	for (j=0;j<propcnt;j++) {
-		char			propname[256],propname2[256];
+		char			propname[256],propname2[256+4];
 		char			*begin, *end, *content;
 		PTPObjectPropDesc	opd;
 		int 			i;
@@ -7507,6 +7576,27 @@ get_file_func (CameraFilesystem *fs, const char *folder, const char *filename,
 					free (ximage);
 					ximage = NULL;
 					offset += xsize;
+				}
+				goto done;
+		}
+		/* We also need this for Nikon D850 and very big RAWs (>40 MB) */
+		if (	(ptp_operation_issupported(params,PTP_OC_GetPartialObject)) &&
+			(size > BLOBSIZE)
+		) {
+				unsigned char	*ximage = NULL;
+				uint32_t 	offset = 0;
+
+				while (offset < size) {
+					uint32_t	xsize = size - offset;
+					uint32_t	xlen;
+
+					if (xsize > BLOBSIZE)
+						xsize = BLOBSIZE;
+					C_PTP_REP (ptp_getpartialobject (params, oid, offset, xsize, &ximage, &xlen));
+					gp_file_append (file, (char*)ximage, xlen);
+					free (ximage);
+					ximage = NULL;
+					offset += xlen;
 				}
 				goto done;
 		}

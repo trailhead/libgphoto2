@@ -107,22 +107,6 @@ have_prop(Camera *camera, uint16_t vendor, uint16_t prop) {
 }
 
 static int
-have_eos_prop(Camera *camera, uint16_t vendor, uint16_t prop) {
-	unsigned int i;
-
-	/* The special Canon EOS property set gets special treatment. */
-	if ((camera->pl->params.deviceinfo.VendorExtensionID != PTP_VENDOR_CANON) ||
-	    (vendor != PTP_VENDOR_CANON)
-	)
-		return 0;
-	for (i=0;i<camera->pl->params.nrofcanon_props;i++)
-		if (camera->pl->params.canon_props[i].proptype == prop)
-			return 1;
-	return 0;
-}
-
-
-static int
 camera_prepare_chdk_capture(Camera *camera, GPContext *context) {
 	PTPParams		*params = &camera->pl->params;
 	int 			scriptid = 0, major = 0,minor = 0;
@@ -323,7 +307,7 @@ camera_canon_eos_update_capture_target(Camera *camera, GPContext *context, int v
 	int			cardval = -1;
 
 	memset(&dpd,0,sizeof(dpd));
-	if (!have_eos_prop(camera, PTP_VENDOR_CANON, PTP_DPC_CANON_EOS_CaptureDestination) ) {
+	if (!have_eos_prop(params, PTP_VENDOR_CANON, PTP_DPC_CANON_EOS_CaptureDestination) ) {
 		GP_LOG_D ("No CaptureDestination property?");
 		return GP_OK;
 	}
@@ -368,7 +352,7 @@ camera_canon_eos_update_capture_target(Camera *camera, GPContext *context, int v
 			ret = ptp_canon_eos_pchddcapacity(params, 0x7fffffff, 0x00001000, 0x00000001);
 			 */
 
-			ret = ptp_canon_eos_pchddcapacity(params, 0x04ffffff, 0x00001000, 0x00000001);
+			ret = ptp_canon_eos_pchddcapacity(params, 0x0fffffff, 0x00001000, 0x00000001);
 			/* not so bad if its just busy, would also fail later. */
 			if (ret == PTP_RC_DeviceBusy) ret = PTP_RC_OK;
 			C_PTP (ret);
@@ -440,7 +424,7 @@ camera_prepare_canon_eos_capture(Camera *camera, GPContext *context) {
 	/* The new EOS occasionaly returned an empty event set ... likely because we are too fast. try again some times. */
 	C_PTP (ptp_check_eos_events (params));
 	tries = 10;
-	while (--tries && !have_eos_prop(camera,PTP_VENDOR_CANON,PTP_DPC_CANON_EOS_EVFOutputDevice)) {
+	while (--tries && !have_eos_prop(params,PTP_VENDOR_CANON,PTP_DPC_CANON_EOS_EVFOutputDevice)) {
 		GP_LOG_D("evfoutput device not found, retrying");
 		usleep(50*1000);
 		C_PTP (ptp_check_eos_events (params));
@@ -553,11 +537,8 @@ camera_unprepare_canon_eos_capture(Camera *camera, GPContext *context) {
 	if (is_canon_eos_m (params)) {
 		PTPPropertyValue    ct_val;
 
-/*
- * Marcus: This was originalluy added ... but it gives a delya on the EOS M10 on closing ... weird
 		ct_val.u16 = 0x0000;
 		C_PTP (ptp_canon_eos_setdevicepropvalue (params, PTP_DPC_CANON_EOS_EVFOutputDevice, &ct_val, PTP_DTC_UINT16));
-*/
 	}
 
 	/* then emits 911b and 911c ... not done yet ... */
@@ -1411,6 +1392,7 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 	PTPPropertyValue	propval;						\
 	inttype			origval;						\
 	time_t			start,end;						\
+	int			tries = 100;	/* 100 steps allowed towards the new value */	\
 											\
 	GP_LOG_D("setting 0x%04x to 0x%08x", prop, value);				\
 											\
@@ -1420,6 +1402,7 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 		GP_LOG_D("value is already 0x%08x", value);				\
 		return GP_OK;								\
 	}										\
+fallback:										\
 	do {										\
 		origval = dpd.CurrentValue.bits;					\
 		int posorig = -1, posnew = -1;					\
@@ -1520,8 +1503,9 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 				}							\
 			}								\
 			if (posnow == -1) {						\
-				gp_context_error (context, _("Now value is not in enumeration."));\
-				return GP_ERROR_BAD_PARAMETERS;				\
+				GP_LOG_D ("Now value is not in enumeration, falling back to ordered tries.");\
+				useenumorder = 0;					\
+				goto fallback;						\
 			}								\
 			GP_LOG_D("posnow %d, value %d", posnow, dpd.CurrentValue.bits);	\
 			if ((posnow == 0) && (propval.u8 == 0xff)) {			\
@@ -1535,7 +1519,7 @@ _put_sony_value_##bits (PTPParams*params, uint16_t prop, inttype value,int useen
 				return GP_ERROR;					\
 			}								\
 		} 									\
-	} while (1);									\
+	} while (tries--);/* occasionaly we fail, make an escape path */		\
 	return GP_OK;									\
 }
 
@@ -2893,7 +2877,7 @@ _put_Sony_ISO(CONFIG_PUT_ARGS)
 		return GP_ERROR;
 
 	if (strstr(value,_("Multi Frame Noise Reduction")))
-		u |= 0x10000;
+		u |= 0x1000000;
 
 setiso:
 	propval->u32 = u;
@@ -3770,6 +3754,10 @@ static struct deviceproptableu16 nikon_d850_focus_metering[] = {
 	{ N_("Dynamic-area AF (153 points)"),	0x8014, PTP_VENDOR_NIKON},
 	{ N_("Group-area AF"),	0x8015, PTP_VENDOR_NIKON},
 	{ N_("Dynamic-area AF (9 points)"),	0x8016, PTP_VENDOR_NIKON},	
+
+	{ N_("Pinpoint AF"),		0x8017, PTP_VENDOR_NIKON}, /* on Z */
+	{ N_("Wide-area AF (S)"),	0x8018, PTP_VENDOR_NIKON}, /* on Z */
+	{ N_("Wide-area AF (L)"),	0x8019, PTP_VENDOR_NIKON}, /* on Z */
 };
 GENERIC16TABLE(Nikon_D850_FocusMetering,nikon_d850_focus_metering)
 
@@ -4300,6 +4288,64 @@ _put_Ricoh_ShutterSpeed(CONFIG_PUT_ARGS) {
 	return GP_OK;
 }
 
+/* This list is taken from Sony A58... fill in more if your Sony has more */
+static struct sonyshutter {
+	int dividend, divisor;
+} sony_shuttertable[] = {
+	{30,1},
+	{25,1},
+	{20,1},
+	{15,1},
+	{13,1},
+	{10,1},
+	{8,1},
+	{6,1},
+	{5,1},
+	{4,1},
+	{32,10},
+	{25,10},
+	{2,1},
+	{16,10},
+	{13,10},
+	{1,1},
+	{8,10},
+	{6,10},
+	{5,10},
+	{4,10},
+	{1,3},
+	{1,4},
+	{1,5},
+	{1,6},
+	{1,8},
+	{1,10},
+	{1,13},
+	{1,15},
+	{1,20},
+	{1,25},
+	{1,30},
+	{1,40},
+	{1,50},
+	{1,60},
+	{1,80},
+	{1,100},
+	{1,125},
+	{1,160},
+	{1,200},
+	{1,250},
+	{1,320},
+	{1,400},
+	{1,500},
+	{1,640},
+	{1,800},
+	{1,1000},
+	{1,1250},
+	{1,1600},
+	{1,2000},
+	{1,2500},
+	{1,3200},
+	{1,4000},
+};
+
 static int
 _get_Sony_ShutterSpeed(CONFIG_GET_ARGS) {
 	int x,y;
@@ -4310,6 +4356,23 @@ _get_Sony_ShutterSpeed(CONFIG_GET_ARGS) {
 
 	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
 	gp_widget_set_name (*widget, menu->name);
+
+	if (dpd->FormFlag & PTP_DPFF_Enumeration) {
+		GP_LOG_E("there is a enum, support it! ... report to gphoto-devel list!\n");
+	} else {
+		unsigned int i;
+		/* use our static table */
+		for (i=0;i<sizeof(sony_shuttertable)/sizeof(sony_shuttertable[0]);i++) {
+			x = sony_shuttertable[i].dividend;
+			y = sony_shuttertable[i].divisor;
+			if (y == 1)
+				sprintf (buf, "%d",x);
+			else
+				sprintf (buf, "%d/%d",x,y);
+			gp_widget_add_choice (*widget, buf);
+		}
+		gp_widget_add_choice (*widget, _("Bulb"));
+	}
 
 	if (dpd->CurrentValue.u32 == 0) {
 		strcpy(buf,_("Bulb"));
@@ -8507,6 +8570,8 @@ static struct submenu capture_settings_menu[] = {
 	{ N_("Long Exp Noise Reduction"),       "longexpnr",                PTP_DPC_NIKON_1_LongExposureNoiseReduction, PTP_VENDOR_NIKON, PTP_DTC_UINT8, _get_Nikon_OnOff_UINT8,            _put_Nikon_OnOff_UINT8 },
 	{ N_("Auto Focus Mode 2"),              "autofocusmode2",           PTP_DPC_NIKON_A4AFActivation,           PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,             _put_Nikon_OnOff_UINT8 },
 	{ N_("Zoom"),                           "zoom",                     PTP_DPC_CANON_Zoom,                     PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_ZoomRange,               _put_Canon_ZoomRange },
+	{ N_("Zoom"),                           "zoom",                     PTP_DPC_CANON_EOS_PowerZoomPosition,    PTP_VENDOR_CANON,   PTP_DTC_UINT32, _get_INT,                           _put_INT },
+	{ N_("Zoom Speed"),                     "zoomspeed",                PTP_DPC_CANON_EOS_PowerZoomSpeed,       PTP_VENDOR_CANON,   PTP_DTC_UINT32, _get_INT,                           _put_INT },
 	{ N_("Assist Light"),                   "assistlight",              PTP_DPC_CANON_AssistLight,              PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_AssistLight,             _put_Canon_AssistLight },
 	{ N_("Rotation Flag"),                  "autorotation",             PTP_DPC_CANON_RotationScene,            PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_AutoRotation,            _put_Canon_AutoRotation },
 	{ N_("Self Timer"),                     "selftimer",                PTP_DPC_CANON_SelfTime,                 PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_SelfTimer,               _put_Canon_SelfTimer },
@@ -8715,13 +8780,19 @@ static struct submenu nikon_d40_capture_settings[] = {
 };
 
 static struct submenu nikon_d850_capture_settings[] = {
-	{ N_("Image Quality"),          		"imagequality",			PTP_DPC_CompressionSetting,     PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_D850_Compression,       _put_Nikon_D850_Compression },
+	{ N_("Image Quality"),          	"imagequality",			PTP_DPC_CompressionSetting,     PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_D850_Compression,       _put_Nikon_D850_Compression },
 	{ N_("Image Rotation Flag"),            "imagerotationflag",    PTP_DPC_NIKON_ImageRotation,    PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OffOn_UINT8,            _put_Nikon_OffOn_UINT8 },
 	{ N_("Active D-Lighting"),              "dlighting",            PTP_DPC_NIKON_ActiveDLighting,  PTP_VENDOR_NIKON,   PTP_DTC_INT8,   _get_Nikon_D850_ActiveDLighting,   _put_Nikon_D850_ActiveDLighting },
 	{ N_("Continuous Shooting Speed Slow"), "shootingspeed",        PTP_DPC_NIKON_D1ShootingSpeed,  PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_D850_ShootingSpeed,     _put_Nikon_D850_ShootingSpeed },
 	{ N_("Movie Resolution"),               "moviequality",         PTP_DPC_NIKON_MovScreenSize,    PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_D850_MovieQuality,      _put_Nikon_D850_MovieQuality },	
 	{ N_("Center Weight Area"),             "centerweightsize",     PTP_DPC_NIKON_CenterWeightArea, PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_D850_CenterWeight,      _put_Nikon_D850_CenterWeight },
-	{ N_("Focus Metering Mode"),            "focusmetermode",       PTP_DPC_FocusMeteringMode,		PTP_VENDOR_NIKON,   PTP_DTC_UINT16, _get_Nikon_D850_FocusMetering,     _put_FocusMetering },
+	{ N_("Focus Metering Mode"),            "focusmetermode",       PTP_DPC_FocusMeteringMode,	PTP_VENDOR_NIKON,   PTP_DTC_UINT16, _get_Nikon_D850_FocusMetering,     _put_Nikon_D850_FocusMetering },
+	{ 0,0,0,0,0,0,0 },
+};
+
+static struct submenu nikon_z6_capture_settings[] = {
+	{ N_("Image Quality"),          	"imagequality",		PTP_DPC_CompressionSetting,     PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_D850_Compression,       _put_Nikon_D850_Compression },
+	{ N_("Focus Metering Mode"),            "focusmetermode",       PTP_DPC_FocusMeteringMode,	PTP_VENDOR_NIKON,   PTP_DTC_UINT16, _get_Nikon_D850_FocusMetering,     _put_Nikon_D850_FocusMetering },
 	{ 0,0,0,0,0,0,0 },
 };
 
@@ -8825,6 +8896,8 @@ static struct menu menus[] = {
 	{ N_("Capture Settings"),           "capturesettings",  0x4b0,  0x0430, nikon_d7100_capture_settings,   NULL,   NULL },
 	{ N_("Capture Settings"),           "capturesettings",  0x4b0,  0x0414, nikon_d40_capture_settings,     NULL,   NULL },
 	{ N_("Capture Settings"),           "capturesettings",  0x4b0,  0x0441, nikon_d850_capture_settings,    NULL,   NULL },
+	{ N_("Capture Settings"),           "capturesettings",  0x4b0,  0x0442, nikon_z6_capture_settings,      NULL,   NULL },	/* Z7 */
+	{ N_("Capture Settings"),           "capturesettings",  0x4b0,  0x0443, nikon_z6_capture_settings,      NULL,   NULL }, /* Z6 */
 	{ N_("Capture Settings"),           "capturesettings",  0x4b0,  0,      nikon_generic_capture_settings, NULL,   NULL },
 	{ N_("Capture Settings"),           "capturesettings",  0,      0,      capture_settings_menu,          NULL,   NULL },
 
@@ -9005,7 +9078,7 @@ _get_config (Camera *camera, const char *confname, CameraWidget **outwidget, Cam
 					gp_widget_append (section, widget);
 				continue;
 			}
-			if (have_eos_prop(camera,cursub->vendorid,cursub->propid)) {
+			if (have_eos_prop(params,cursub->vendorid,cursub->propid)) {
 				PTPDevicePropDesc	dpd;
 
 				if ((mode == MODE_SINGLE_GET) && strcmp (cursub->name, confname))
@@ -9366,7 +9439,7 @@ _set_config (Camera *camera, const char *confname, CameraWidget *window, GPConte
 				if (mode == MODE_SINGLE_SET)
 					return GP_OK;
 			}
-			if (have_eos_prop(camera,cursub->vendorid,cursub->propid)) {
+			if (have_eos_prop(params,cursub->vendorid,cursub->propid)) {
 				PTPDevicePropDesc	dpd;
 
 				if ((mode == MODE_SINGLE_SET) && strcmp (confname, cursub->name))
