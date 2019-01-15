@@ -987,6 +987,9 @@ static struct {
 	/* https://sourceforge.net/p/gphoto/support-requests/127/ */
 	{"Sony:Alpha-A5000 (Control)",0x054c, 0x07c6, PTP_CAP},
 
+	/* bertrand.chambon@free.fr */
+	{"Sony:Alpha-A68 (Control)",  0x054c, 0x079b, PTP_CAP|PTP_CAP_PREVIEW},
+
 	/* https://github.com/gphoto/libgphoto2/issues/70 */
 	{"Sony:Alpha-A6300 (Control)",0x054c, 0x079c, PTP_CAP|PTP_CAP_PREVIEW},
 
@@ -1066,6 +1069,10 @@ static struct {
 	{"Sony:Alpha-RX10M4 (Control)", 	0x054c,0x0c2f, PTP_CAP|PTP_CAP_PREVIEW},
 
 	{"Sony:DSC-RX0 (PC Control)",		0x054c, 0x0c32, PTP_CAP|PTP_CAP_PREVIEW},
+
+	/* Elijah Parker, mail@timelapseplus.com */
+	{"Sony:Alpha-A7r III (PC Control)",	0x054c, 0x0c33, PTP_CAP|PTP_CAP_PREVIEW}, /* FIXME: crosscheck */
+	{"Sony:Alpha-A7 III (PC Control)",	0x054c, 0x0c34, PTP_CAP|PTP_CAP_PREVIEW}, /* FIXME: crosscheck */
 
 	/* Mikael Ståldal <mikael@staldal.nu> */
 	{"Sony:DSC-RX100M5A (MTP)",		0x054c, 0x0cb1, 0},
@@ -2955,12 +2962,8 @@ enable_liveview:
 			if ((ret != PTP_RC_OK) && (ret != PTP_RC_DeviceBusy))
 				C_PTP_REP_MSG (ret, _("Nikon enable liveview failed"));
 
-			do {
-				ret = ptp_nikon_device_ready(params);
-				usleep(20*1000);
-			} while (ret == PTP_RC_DeviceBusy);
-
-			C_PTP_REP_MSG (ret, _("Nikon enable liveview failed"));
+			/* wait up to 1 second */
+			C_PTP_REP_MSG (nikon_wait_busy(params,20,1000), _("Nikon enable liveview failed"));
 			params->inliveview = 1;
 			firstimage = 1;
 		}
@@ -2970,12 +2973,7 @@ enable_liveview:
 			if ((ret != PTP_RC_OK) && (ret != PTP_RC_DeviceBusy))
 				C_PTP_REP_MSG (ret, _("Nikon enable liveview failed"));
 
-			do {
-				ret = ptp_nikon_device_ready(params);
-				usleep(20*1000);
-			} while (ret == PTP_RC_DeviceBusy);
-
-			C_PTP_REP_MSG (ret, _("Nikon enable liveview failed"));
+			C_PTP_REP_MSG (nikon_wait_busy(params,20,1000), _("Nikon enable liveview failed"));
 			params->inliveview = 1;
 		}
 		tries = 20;
@@ -3375,6 +3373,7 @@ camera_nikon_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pa
 	uint32_t		newobject;
 	int			back_off_wait = 0;
 	struct timeval          capture_start;
+	int			loops;
 
 
 	if (type != GP_CAPTURE_IMAGE)
@@ -3431,17 +3430,14 @@ camera_nikon_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pa
 		if ((ret != PTP_RC_OK) && (ret != PTP_RC_DeviceBusy))
 			C_PTP_REP_MSG(ret, _("Failed to enable liveview on a Nikon 1, but it is required for capture"));
 		/* OK or busy, try to proceed ... */
-		do {
-			ret = ptp_nikon_device_ready(params);
-			usleep(20*1000);
-		} while (ret == PTP_RC_DeviceBusy);
+		C_PTP_REP_MSG (nikon_wait_busy(params,20,1000), _("Nikon enable liveview failed"));
 	}
 
 	if (ptp_operation_issupported(params, PTP_OC_NIKON_InitiateCaptureRecInMedia)) {
 		/* we assume for modern cameras this event method works to avoid longer waits */
 		params->event90c7works = 1;
 
-		int loops = 100;
+		loops = 100;
 		do {
 			ret = ptp_nikon_capture2 (params, af, sdram);
 			/* Nikon 1 ... if af is 0, it reports PTP_RC_NIKON_InvalidStatus */
@@ -3461,12 +3457,12 @@ camera_nikon_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pa
 	}
 
 	if (!params->inliveview && ptp_operation_issupported(params,PTP_OC_NIKON_AfCaptureSDRAM)) {
-		int loops = 100;
+		loops = 100;
 		do {
 			ret = ptp_nikon_capture_sdram(params);
 		} while ((ret == PTP_RC_DeviceBusy) && (loops--));
 	} else {
-		int loops = 100;
+		loops = 100;
 		do {
 			ret = ptp_nikon_capture(params, 0xffffffff);
 		} while ((ret == PTP_RC_DeviceBusy) && (loops--));
@@ -3477,13 +3473,7 @@ capturetriggered:
 
 	CR (gp_port_set_timeout (camera->port, capture_timeout));
 
-	while ((ret = ptp_nikon_device_ready(params)) == PTP_RC_DeviceBusy) {
-		gp_context_idle (context);
-		/* do not drain all of the DSLRs compute time */
-		usleep(100*1000); /* 0.1 seconds */
-	}
-
-	C_PTP_REP (ret); /* e.g. out of focus gets reported here. */
+	C_PTP_REP (nikon_wait_busy (params, 100, 5000)); /* lets wait 5 seconds */
 
 	newobject = 0xffff0001;
 	done = 0; tries = 100;
@@ -4198,8 +4188,6 @@ camera_sony_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 			GP_LOG_D ("during event.code=%04x Param1=%08x", event.Code, event.Param1);
 			if (event.Code == PTP_EC_Sony_ObjectAdded) {
 				newobject = event.Param1;
-				if (dual)
-					ptp_add_event (params, &event);
 				GP_LOG_D ("SONY ObjectAdded received, ending wait");
 				break;
 			}
@@ -4487,10 +4475,12 @@ camera_panasonic_capture (Camera *camera, CameraCaptureType type, CameraFilePath
 		while (ptp_get_one_event(params, &event)) {
 			switch (event.Code) {
 			case 0xC101:
+				ptp_panasonic_9401(params, event.Param1); // not sure if this is needed or what this does (following LUMIXTether)
 			case 0xC107:
 				//event_start = time_now(); // still working...
 				break;
 			case PTP_EC_PANASONIC_ObjectAdded:
+			case PTP_EC_PANASONIC_ObjectAddedSDRAM: /* marcus: check if this works */
 				newobject = event.Param1;
 				C_PTP_REP (ptp_object_want (params, newobject, PTPOBJECT_OBJECTINFO_LOADED, &ob));
 
@@ -5173,11 +5163,11 @@ camera_trigger_capture (Camera *camera, GPContext *context)
 	) {
 		/* If in liveview mode, we have to run non-af capture */
 		int inliveview = 0;
-		int tries = 200;
+		int tries;
 		PTPPropertyValue propval;
 
 		C_PTP_REP (ptp_check_event (params));
-		while (PTP_RC_DeviceBusy == ptp_nikon_device_ready (params));
+		C_PTP_REP (nikon_wait_busy (params, 100, 1000)); /* lets wait 1 second */
 		C_PTP_REP (ptp_check_event (params));
 
 		if (ptp_property_issupported (params, PTP_DPC_NIKON_LiveViewStatus)) {
@@ -5188,6 +5178,7 @@ camera_trigger_capture (Camera *camera, GPContext *context)
 			if (inliveview) af = 0;
 		}
 
+		tries = 200;
 		do {
 			ret = ptp_nikon_capture2 (params, af, sdram);
 			if (ret == PTP_RC_OK)
@@ -5208,11 +5199,7 @@ camera_trigger_capture (Camera *camera, GPContext *context)
 			/* sleep a bit perhaps ? or check events? */
 		} while (tries--);
 
-		while (PTP_RC_DeviceBusy == ptp_nikon_device_ready (params)) {
-			gp_context_idle (context);
-			/* do not drain all of the DSLRs compute time */
-			usleep(100*1000); /* 0.1 seconds */
-		}
+		C_PTP_REP (nikon_wait_busy (params, 100, 1000)); /* lets wait 1 second */
 		return GP_OK;
 	}
 
@@ -5246,12 +5233,7 @@ camera_trigger_capture (Camera *camera, GPContext *context)
 				return translate_ptp_result (ret);
 		} while (ret == PTP_RC_DeviceBusy);
 
-		while (PTP_RC_DeviceBusy == ptp_nikon_device_ready (params)) {
-			gp_context_idle (context);
-			/* do not drain all of the DSLRs compute time */
-			usleep(100*1000); /* 0.1 seconds */
-		}
-
+		C_PTP_REP (nikon_wait_busy (params, 100, 5000)); /* lets wait 5 seconds */
 		return GP_OK;
 	}
 
@@ -8467,8 +8449,12 @@ camera_init (Camera *camera, GPContext *context)
 
 		if (ptp_operation_issupported(params, PTP_OC_CANON_EOS_SetRemoteMode)) {
 			if (is_canon_eos_m(params)) {
-				C_PTP (ptp_canon_eos_setremotemode(params, 0x15));
+				int mode = 0x15;	/* default for EOS M and newer Powershot SX */
 
+				/* according to reporter only needed in config.c part 
+				if (!strcmp(params->deviceinfo.Model,"Canon PowerShot G5 X")) mode = 0x11;
+				*/
+				C_PTP (ptp_canon_eos_setremotemode(params, mode));
 				/* Setting remote mode changes device info on EOS M2,
 				   so have to reget it */
 				C_PTP (ptp_getdeviceinfo(&camera->pl->params, &camera->pl->params.deviceinfo));

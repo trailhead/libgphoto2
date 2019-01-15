@@ -381,7 +381,10 @@ camera_prepare_canon_eos_capture(Camera *camera, GPContext *context) {
 	GP_LOG_D ("preparing EOS capture...");
 
 	if (is_canon_eos_m(params)) {
-		C_PTP (ptp_canon_eos_setremotemode(params, 0x15));
+		int mode = 0x15;	/* default for EOS M and newer Powershot SX */
+
+		if (!strcmp(params->deviceinfo.Model,"Canon PowerShot G5 X")) mode = 0x11;
+		C_PTP (ptp_canon_eos_setremotemode(params, mode));
 	} else {
 		C_PTP (ptp_canon_eos_setremotemode(params, 1));
 	}
@@ -501,6 +504,14 @@ camera_prepare_capture (Camera *camera, GPContext *context)
 			return camera_prepare_canon_eos_capture(camera,context);
 		gp_context_error(context, _("Sorry, your Canon camera does not support Canon capture"));
 		return GP_ERROR_NOT_SUPPORTED;
+	case PTP_VENDOR_PANASONIC: {
+		char buf[1024];
+		if ((GP_OK != gp_setting_get("ptp2","capturetarget",buf)) || !strcmp(buf,"sdram"))
+			C_PTP (ptp_panasonic_setcapturetarget(params, 1));
+		else
+			C_PTP (ptp_panasonic_setcapturetarget(params, 0));
+		break;
+	}
 	default:
 		/* generic capture does not need preparation */
 		return GP_OK;
@@ -544,7 +555,8 @@ camera_unprepare_canon_eos_capture(Camera *camera, GPContext *context) {
 	/* then emits 911b and 911c ... not done yet ... */
 	CR (camera_canon_eos_update_capture_target(camera, context, 1));
 
-	C_PTP (ptp_canon_eos_resetuilock (params));
+	if (ptp_operation_issupported(&camera->pl->params, PTP_OC_CANON_EOS_ResetUILock))
+		C_PTP (ptp_canon_eos_resetuilock (params));
 
 	/* Drain the rest set of the event data */
 	C_PTP (ptp_check_eos_events (params));
@@ -6425,6 +6437,53 @@ _put_Canon_EOS_MFDrive(CONFIG_PUT_ARGS) {
 	return GP_OK;
 }
 
+static int
+_get_Panasonic_MFDrive(CONFIG_GET_ARGS) {
+	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
+	gp_widget_set_name (*widget,menu->name);
+
+	gp_widget_add_choice (*widget, _("Near 1"));
+	gp_widget_add_choice (*widget, _("Near 2"));
+	gp_widget_add_choice (*widget, _("None"));
+	gp_widget_add_choice (*widget, _("Far 1"));
+	gp_widget_add_choice (*widget, _("Far 2"));
+
+	gp_widget_set_value (*widget, _("None"));
+	return GP_OK;
+}
+
+static int
+_put_Panasonic_MFDrive(CONFIG_PUT_ARGS) {
+	const char*     val;
+	unsigned int    xval;
+	uint16_t	direction = 0; // 0=near
+	uint16_t	mode = 0x02;
+	PTPParams	*params = &(camera->pl->params);
+
+	gp_widget_get_value(widget, &val);
+
+	if (!strcmp (val, _("None"))) return GP_OK;
+
+	if (!sscanf (val, _("Near %d"), &xval)) {
+		if (!sscanf (val, _("Far %d"), &xval)) {
+			GP_LOG_D ("Could not parse %s", val);
+			return GP_ERROR;
+		} else {
+			direction = 1; // far
+		}
+	}
+	if(direction) { // far
+		if(xval == 1) mode = 0x03;
+		if(xval == 2) mode = 0x04;
+	} else { // near
+		if(xval == 1) mode = 0x02;
+		if(xval == 2) mode = 0x01;
+	}
+	gp_widget_set_value (widget, _("None")); /* Marcus: not right here */
+	C_PTP_MSG (ptp_panasonic_manualfocusdrive (params, mode), "Panasonic manual focus drive 0x%x failed", xval);
+	return GP_OK;
+}
+
 
 static int
 _get_Olympus_OMD_MFDrive(CONFIG_GET_ARGS) {
@@ -7823,6 +7882,7 @@ _put_CaptureTarget(CONFIG_PUT_ARGS) {
 	char		*val;
 	PTPParams	*params = &(camera->pl->params);
 	GPContext	*context = ((PTPData *) params->data)->context;
+	char		buf[1024];
 
 	CR (gp_widget_get_value(widget, &val));
 	for (i=0;i<sizeof(capturetargets)/sizeof(capturetargets[i]);i++) {
@@ -7839,6 +7899,12 @@ _put_CaptureTarget(CONFIG_PUT_ARGS) {
 	)
 		CR (camera_canon_eos_update_capture_target( camera, context, -1 ));
 
+	if (    (params->deviceinfo.VendorExtensionID == PTP_VENDOR_PANASONIC) ) {
+		if ((GP_OK != gp_setting_get("ptp2","capturetarget",buf)) || !strcmp(buf,"sdram"))
+			C_PTP (ptp_panasonic_setcapturetarget(params, 1));
+		else
+			C_PTP (ptp_panasonic_setcapturetarget(params, 0));
+	}
 	return GP_OK;
 }
 
@@ -8454,7 +8520,8 @@ static struct submenu camera_actions_menu[] = {
 	{ N_("Set Nikon Control Mode"),         "controlmode",      0,  PTP_VENDOR_NIKON,   PTP_OC_NIKON_SetControlMode,        _get_Nikon_ControlMode,         _put_Nikon_ControlMode },
 	{ N_("Drive Canon DSLR Manual focus"),  "manualfocusdrive", 0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_DriveLens,         _get_Canon_EOS_MFDrive,         _put_Canon_EOS_MFDrive },
 	{ N_("Cancel Canon DSLR Autofocus"),    "cancelautofocus",  0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_AfCancel,          _get_Canon_EOS_AFCancel,        _put_Canon_EOS_AFCancel },
-	{ N_("Drive Olympus OMD Manual focus"), "manualfocusdrive", 0,  PTP_VENDOR_GP_OLYMPUS_OMD, PTP_OC_OLYMPUS_OMD_MFDrive,         _get_Olympus_OMD_MFDrive,       _put_Olympus_OMD_MFDrive },
+	{ N_("Drive Olympus OMD Manual focus"), "manualfocusdrive", 0,  PTP_VENDOR_GP_OLYMPUS_OMD, PTP_OC_OLYMPUS_OMD_MFDrive,	_get_Olympus_OMD_MFDrive,	_put_Olympus_OMD_MFDrive },
+	{ N_("Drive Panasonic Manual focus"),   "manualfocusdrive", 0,  PTP_VENDOR_PANASONIC, PTP_OC_PANASONIC_ManualFocusDrive,_get_Panasonic_MFDrive,		_put_Panasonic_MFDrive },
 	{ N_("Canon EOS Zoom"),                 "eoszoom",          0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_Zoom,              _get_Canon_EOS_Zoom,            _put_Canon_EOS_Zoom },
 	{ N_("Canon EOS Zoom Position"),        "eoszoomposition",  0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_ZoomPosition,      _get_Canon_EOS_ZoomPosition,    _put_Canon_EOS_ZoomPosition },
 	{ N_("Canon EOS Viewfinder"),           "viewfinder",       0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_GetViewFinderData, _get_Canon_EOS_ViewFinder,      _put_Canon_EOS_ViewFinder },
@@ -8549,6 +8616,7 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("Capture Target"),		      "capturetarget",0,  PTP_VENDOR_NIKON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
 	{ N_("Autofocus"),		          "autofocus",    0,  PTP_VENDOR_NIKON,   0,  _get_Autofocus,         _put_Autofocus },
 	{ N_("Capture Target"),					"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("Capture Target"),					"capturetarget",0,  PTP_VENDOR_PANASONIC,0, _get_CaptureTarget,     _put_CaptureTarget },
 	{ N_("CHDK"),     							"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
 	{ N_("Capture"),								"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
 	{ N_("AF Method"),						  "afmethod", PTP_DPC_CANON_EOS_LvAfSystem,  PTP_VENDOR_CANON,   PTP_DTC_UINT32,  _get_Canon_AFMethod,     _put_Canon_AFMethod },
