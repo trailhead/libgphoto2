@@ -27,8 +27,6 @@ gp_camera_folder_list_files
 gp_camera_folder_list_folders
 gp_camera_folder_make_dir
 gp_camera_folder_put_file
-gp_camera_set_filesys_optimize
-gp_camera_get_filesys_optimize
 gp_camera_folder_remove_dir
 gp_camera_free
 gp_camera_get_abilities

@@ -1563,32 +1563,6 @@ gp_camera_folder_put_file (Camera *camera,
 	return (GP_OK);
 }
 
-static int _filesystem_optimize = 0;
-
-/**
- * Sets global filesystem optimization flag.
- *
- * @param optimize true/false
- * @return 
- *
- **/
-void 
-gp_camera_set_filesys_optimize  (int optimize) {
-  _filesystem_optimize = optimize;
-}
-
-/**
- * Returns the global filesystem optimization flag.
- *
- * @param optimize true/false
- * @return 
- *
- **/
-int 
-gp_camera_get_filesys_optimize  (void) {
-  return _filesystem_optimize;
-}
-
 /**
  * Retrieves information about a file.
  *

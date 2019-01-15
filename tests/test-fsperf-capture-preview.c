@@ -31,14 +31,6 @@ main (int argc, char ** argv)
   // Disable output buffering for stdout
   setbuf(stdout, NULL);
 
-  if (argc == 2 && !strcmp(argv[1], "-o")) {
-    printf("Setting optimize to TRUE\n");
-    gp_camera_set_filesys_optimize(TRUE);
-    printf("Optimize set to %s\n", gp_camera_get_filesys_optimize() ? "TRUE" : "FALSE");
-  } else {
-    printf("Running in default mode without optimization\n");
-  }
-
 	/*
 	 * You'll probably want to access your camera. You will first have
 	 * to create a camera (that is, allocating the memory).

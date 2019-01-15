@@ -6572,13 +6572,9 @@ find_child (PTPParams *params,const char *file,uint32_t storage,uint32_t handle,
 
 	for (i = 0; i < params->nrofobjects; i++) {
 
-		if (!gp_camera_get_filesys_optimize()) {
-			// Iterate forward (default)
-			index = i;
-		} else {
-			// Iterate backwards through list to find most recent items quickly.
-			index = params->nrofobjects - 1 - i;
-		}
+		// Iterate backwards through list to find most recent items quickly.
+		index = params->nrofobjects - 1 - i;
+
 		PTPObject	*ob = &params->objects[index];
 		uint32_t	oid = ob->oid;
 
@@ -7605,6 +7601,7 @@ get_file_func (CameraFilesystem *fs, const char *folder, const char *filename,
 					free (ximage);
 					ximage = NULL;
 					offset += xlen;
+
 				}
 				goto done;
 		}

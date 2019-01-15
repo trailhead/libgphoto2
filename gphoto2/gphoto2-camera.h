@@ -434,14 +434,6 @@ int gp_camera_folder_remove_dir   (Camera *camera, const char *folder,
 /**@}*/
 
 
-/** \name Operations on filesystem optimization 
- * @{
- */
-void gp_camera_set_filesys_optimize  (int optimize);
-int gp_camera_get_filesys_optimize  (void);
-/**@}*/
-
-
 /** \name Operations on files 
  * @{
  */
