@@ -6769,7 +6769,7 @@ _put_Canon_AFMethod(CONFIG_PUT_ARGS) {
 	float value;
 	PTPParams		*params = &(camera->pl->params);
 
-	if (!have_eos_prop(camera, PTP_VENDOR_CANON, PTP_DPC_CANON_EOS_LvAfSystem) ) {
+	if (!have_eos_prop(params, PTP_VENDOR_CANON, PTP_DPC_CANON_EOS_LvAfSystem) ) {
 		GP_LOG_D ("No LvAfSystem property?");
 		return GP_OK;
 	}
