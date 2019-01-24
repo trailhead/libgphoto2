@@ -3197,7 +3197,6 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 
 	double startTime, endTime;
 	double loopStartTime, loopEndTime;
-	double fLastChange          					= 0.0;
 	double fLastChange 										= 0.0;
 	double fChangeErrorTimeout 			      = 5.0f;  // No change for x seconds times out
 	double fChangeRecalcBaseTimeout 		  = 0.6f;  // The quickest we can expect a step to complete
@@ -3234,7 +3233,7 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 			printf("fStepsRemain = %u\n", fStepsRemain);
 
 			// Check to make sure we're not stuck not movie
-			if (fStepsTotalSent  0) {
+			if (fStepsTotalSent > 0) {
 				if (fabs(currentf - fLastValue) < 0.3f) {
 					// No movement
 					printf("No movement\n");
@@ -3297,7 +3296,7 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 						printf("Stepping - fLastChange =%lf\n", fLastChange -startTime);
 						C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_FNumber, &moveval, PTP_DTC_UINT8 ));
 						fLastChange =loopStartTime;
-						fStepsTotalSent+;
+						fStepsTotalSent++;
 						fStepsRemain--;
 					}
 				} else {
@@ -3326,7 +3325,7 @@ put_Sony_F_and_ISO(Camera *camera, float targetf, uint32_t targetiso) {
 	endTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
 
 	printf("Exiting - cycle time = %lf\n", endTime - startTime);
-	printf("%u steps sent\n", fStepsTotalSent)
+	printf("%u steps sent\n", fStepsTotalSent);
 
 	return GP_OK;
 }
