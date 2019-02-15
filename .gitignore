@@ -121,4 +121,5 @@ stamp-h1
 tests/ddb/check-ddb.sh
 tests/test-filesys
 tests/test-gphoto2
+tests/test-combined-iso-f-exp
 +.vscode/

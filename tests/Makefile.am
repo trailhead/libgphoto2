@@ -52,6 +52,15 @@ test_filesys_LDADD = \
 	$(LIBEXIF_LIBS) \
 	$(INTLLIBS)
 
+noinst_PROGRAMS += test-combined-iso-f-exp
+test_combined_iso_f_exp_SOURCE = test-combined-iso-f-exp.c
+test_combined_iso_f_exp_LDADD = \
+	$(top_builddir)/libgphoto2/libgphoto2.la \
+	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
+	$(LIBLTDL) \
+	$(LIBEXIF_LIBS) \
+	$(INTLLIBS)
+
 
 
 TESTS += test-camera-list
