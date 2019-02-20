@@ -3117,10 +3117,6 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 	// Pull the target value
 	CR (gp_widget_get_value (widget, &targetf));
 
-
-  return _put_Sony_F_and_ISO(camera, targetf, 400, context);
-
-
 	targetStops = fMaxStops - (float)(log(targetf*targetf) / log(2));
 
 	do {
@@ -8473,7 +8469,7 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
 	{ N_("CHDK"),     		"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
 	{ N_("Capture"),		"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
-	{ N_("F Stop, ISO and Exposure"),		"f-iso-exp",	0,  PTP_VENDOR_SONY,   0,  _get_Sony_F_ISO_Exp, _put_Sony_F_ISO_Exp },
+	{ N_("F Stop, ISO, and Exposure"),		"f-iso-exp",	0,  PTP_VENDOR_SONY,   0,  _get_Sony_F_ISO_Exp, _put_Sony_F_ISO_Exp },
 	{ 0,0,0,0,0,0,0 },
 };
 

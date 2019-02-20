@@ -32,6 +32,8 @@ main (int argc, char ** argv)
 	printf ("Initializing camera...\n");
 	gp_camera_init (camera, context);
 
+	
+
 	gp_camera_exit(camera, context);
 
 	return (0);
