@@ -1312,6 +1312,9 @@ PUT_SONY_VALUE_(u16,uint16_t) /* _put_sony_value_u16 */
 PUT_SONY_VALUE_(i16,int16_t) /* _put_sony_value_i16 */
 PUT_SONY_VALUE_(u32,uint32_t) /* _put_sony_value_u32 */
 
+/* Arsenal specific sony functions */
+#include "ptp-arsenal-sony.c"
+
 static int
 _get_CANON_FirmwareVersion(CONFIG_GET_ARGS) {
 	char value[64];
@@ -1516,7 +1519,7 @@ _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
 	char *targetStopsStr;
 	uint16_t targetStopsU = 0;
 
-	float lastValuef = -100;
+	float fLastValue = -100;
 	uint16_t stuckCount = 0;
 
 	PTPDevicePropDesc	dpd2;
@@ -1601,7 +1604,7 @@ _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
 		}
 
 		// Check to make sure we're not stuck not movie
-		if (lastValuef != -100 && abs(currentStops - lastValuef) < 0.3) {
+		if (fLastValue != -100 && abs(currentStops - fLastValue) < 0.3) {
 			stuckCount += 1;
 			if (stuckCount > 3) {
 				// printf("No movement\n");
@@ -1611,7 +1614,7 @@ _put_Sony_ExpCompensation(CONFIG_PUT_ARGS) {
 		} else {
 			stuckCount = 0;
 		}
-		lastValuef = currentStops;
+		fLastValue = currentStops;
 
 		if (abs(moves) < 10) {
 			usleep(800000);
@@ -2919,14 +2922,19 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 	PTPPropertyValue	moveval;
 	float targetf, currentf, targetStops, currentStops, moves;
 
-	float maxApertureStops = 12;
-	float lastValuef = 0;
+	float fMaxStops = 12;
+	float fLastValue = 0;
 
+	struct timeval tv;
+	double startTime, endTime;
+
+	gettimeofday(&tv, NULL);
+	startTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
 
 	// Pull the target value
 	CR (gp_widget_get_value (widget, &targetf));
 
-	targetStops = maxApertureStops - (float)(log(targetf*targetf) / log(2));
+	targetStops = fMaxStops - (float)(log(targetf*targetf) / log(2));
 
 	do {
 
@@ -2936,7 +2944,7 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 		currentf = ((float)dpd->CurrentValue.u16) / 100.0;
 
 		// Check how many stops we need to move
-		currentStops = maxApertureStops - (float)(log(currentf*currentf) / log(2));
+		currentStops = fMaxStops - (float)(log(currentf*currentf) / log(2));
 
 		// How many moves to get to the target (assumes camera is setup for 1/3rd stops)
 		moves = (currentStops - targetStops) * 3;
@@ -2958,7 +2966,7 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 		// Make the number of predicted moves
 		for (int i=0;i < ceil(abs(moves));i++) {
 			C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_FNumber, &moveval, PTP_DTC_UINT8 ));
-			usleep(70000);
+			usleep(10000);
 		}
 
 		if (targetf == currentf) {
@@ -2967,16 +2975,21 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 		}
 
 		// Check to make sure we're not stuck not movie
-		if (lastValuef != 0 && abs(currentf - lastValuef) < 0.3) {
+		if (fLastValue != 0 && abs(currentf - fLastValue) < 0.3) {
 			// No movement
 			break;
 		}
-		lastValuef = currentf;
+		fLastValue = currentf;
 
 		usleep(800000);
 	} while(1);
 
-	return GP_OK;
+	gettimeofday(&tv, NULL);
+	endTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
+
+	printf("Exiting - cycle time = %lf\n", endTime - startTime);
+
+ 	return GP_OK;
 }
 
 
@@ -8477,6 +8490,7 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("CHDK"),     							"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
 	{ N_("Capture"),								"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
 	{ N_("AF Method"),						  "afmethod", PTP_DPC_CANON_EOS_LvAfSystem,  PTP_VENDOR_CANON,   PTP_DTC_UINT32,  _get_Canon_AFMethod,     _put_Canon_AFMethod },
+	{ N_("F Stop, ISO, and Exposure"),		"f-iso-exp",	0,  PTP_VENDOR_SONY,   0,  _get_Sony_F_ISO_Exp, _put_Sony_F_ISO_Exp },
 	{ 0,0,0,0,0,0,0 },
 };
 

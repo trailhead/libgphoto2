@@ -55,11 +55,11 @@ test_filesys_LDADD = \
 noinst_PROGRAMS += test-fsperf-capture-info-delete
 test_fsperf_capture_info_delete_SOURCES = test-fsperf-capture-info-delete.c test-fsperf-funcs.c
 test_fsperf_capture_info_delete_LDADD = \
-	$(top_builddir)/libgphoto2/libgphoto2.la \
-	$(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
-	$(LIBLTDL) \
-	$(LIBEXIF_LIBS) \
-	$(INTLLIBS)
+        $(top_builddir)/libgphoto2/libgphoto2.la \
+        $(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
+        $(LIBLTDL) \
+        $(LIBEXIF_LIBS) \
+        $(INTLLIBS)
 
 noinst_PROGRAMS += test-fsperf-trigger-wait-info-delete
 test_fsperf_trigger_wait_info_delete_SOURCES = test-fsperf-trigger-wait-info-delete.c test-fsperf-funcs.c
@@ -88,6 +88,14 @@ test_fsperf_capture_preview_LDADD = \
 	$(LIBEXIF_LIBS) \
 	$(INTLLIBS)
 
+noinst_PROGRAMS += test-combined-iso-f-exp
+test_combined_iso_f_exp_SOURCE = test-combined-iso-f-exp.c
+test_combined_iso_f_exp_LDADD = \
+        $(top_builddir)/libgphoto2/libgphoto2.la \
+        $(top_builddir)/libgphoto2_port/libgphoto2_port/libgphoto2_port.la \
+        $(LIBLTDL) \
+        $(LIBEXIF_LIBS) \
+        $(INTLLIBS)
 
 TESTS += test-camera-list
 INSTALL_TESTS += test-camera-list
