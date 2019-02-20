@@ -495,6 +495,19 @@ ptp_canon_eos_getdeviceinfo (PTPParams* params, PTPCanonEOSDeviceInfo*di)
 		return PTP_ERROR_IO;
 }
 
+uint16_t
+ptp_canon_eos_905f (PTPParams* params, uint32_t x)
+{
+	PTPContainer	ptp;
+	unsigned char	*data = NULL;
+	unsigned int	size;
+
+	PTP_CNT_INIT(ptp, 0x905f, x);
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &data, &size));
+	free (data);
+	return PTP_RC_OK;
+}
+
 #ifdef HAVE_LIBXML2
 static int
 traverse_tree (PTPParams *params, int depth, xmlNodePtr node)
@@ -2022,7 +2035,11 @@ ptp_getdevicepropdesc (PTPParams* params, uint16_t propcode,
 		}
 #endif
 	} else {
-		ptp_unpack_DPD(params, data, devicepropertydesc, size);
+		if (!ptp_unpack_DPD(params, data, devicepropertydesc, size)) {
+			ptp_debug(params,"failed to unpack DPD of propcode 0x%04x, likely corrupted?", propcode);
+			free (data);
+			return PTP_RC_InvalidDevicePropFormat;
+		}
 	}
 	free(data);
 	return ret;
@@ -2688,9 +2705,9 @@ ptp_list_folder (PTPParams *params, uint32_t storage, uint32_t handle) {
 		if (changed) ptp_objects_sort (params);
 		return PTP_RC_OK;
 	}
+fallback:
 #endif
 
-fallback:
 	ptp_debug (params, "Listing ... ");
 	if (handle == 0) xhandle = PTP_HANDLER_SPECIAL; /* 0 would mean all */
 	ret = ptp_getobjecthandles (params, storage, 0, xhandle, &handles);
@@ -3629,6 +3646,10 @@ ptp_sony_getalldevicepropdesc (PTPParams* params)
 	unsigned int		size, readlen;
 	PTPDevicePropDesc	dpd;
 
+	/* for old A900 / A700 who does not have this, but has capture */
+	if (!ptp_operation_issupported(params, PTP_OC_SONY_GetAllDevicePropData))
+		return PTP_RC_OK;
+
 	PTP_CNT_INIT(ptp, PTP_OC_SONY_GetAllDevicePropData);
 	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &data, &size));
 	if (!data)
@@ -3871,7 +3892,7 @@ ptp_generic_getdevicepropdesc (PTPParams *params, uint16_t propcode, PTPDevicePr
 		return PTP_RC_OK;
 	}
 
-	return PTP_RC_OK;
+	return PTP_RC_OperationNotSupported;
 }
 
 /**
@@ -5727,6 +5748,9 @@ ptp_get_property_description(PTPParams* params, uint16_t dpc)
 		{PTP_DPC_SONY_ISO, N_("ISO")},				/* 0xD21E */
 		{PTP_DPC_SONY_Movie, N_("Movie")},			/* 0xD2C8 */
 		{PTP_DPC_SONY_StillImage, N_("Still Image")},		/* 0xD2C7 */
+		{PTP_DPC_SONY_SensorCrop, N_("Sensor Crop")},
+		{PTP_DPC_SONY_AutoFocus, N_("Autofocus")},
+		{PTP_DPC_SONY_Capture, N_("Capture")},
 		{0,NULL}
         };
 
@@ -6923,7 +6947,7 @@ ptp_opcode_trans_t ptp_opcode_canon_trans[] = {
 	{PTP_OC_CANON_EOS_GetCTGInfo,"PTP_OC_CANON_EOS_GetCTGInfo"},
 	{PTP_OC_CANON_EOS_GetLensAdjust,"PTP_OC_CANON_EOS_GetLensAdjust"},
 	{PTP_OC_CANON_EOS_SetLensAdjust,"PTP_OC_CANON_EOS_SetLensAdjust"},
-	{PTP_OC_CANON_EOS_GetMusicInfo,"PTP_OC_CANON_EOS_GetMusicInfo"},
+	{PTP_OC_CANON_EOS_ReadyToSendMusic,"PTP_OC_CANON_EOS_ReadyToSendMusic"},
 	{PTP_OC_CANON_EOS_CreateHandle,"PTP_OC_CANON_EOS_CreateHandle"},
 	{PTP_OC_CANON_EOS_SendPartialObjectEx,"PTP_OC_CANON_EOS_SendPartialObjectEx"},
 	{PTP_OC_CANON_EOS_EndSendPartialObjectEx,"PTP_OC_CANON_EOS_EndSendPartialObjectEx"},
@@ -6955,8 +6979,8 @@ ptp_opcode_trans_t ptp_opcode_canon_trans[] = {
 	{PTP_OC_CANON_EOS_GetAEData,"PTP_OC_CANON_EOS_GetAEData"},
 	{PTP_OC_CANON_EOS_NotifyNetworkError,"PTP_OC_CANON_EOS_NotifyNetworkError"},
 	{PTP_OC_CANON_EOS_AdapterTransferProgress,"PTP_OC_CANON_EOS_AdapterTransferProgress"},
-	{PTP_OC_CANON_EOS_TransferComplete2,"PTP_OC_CANON_EOS_TransferComplete2"},
-	{PTP_OC_CANON_EOS_CancelTransfer2,"PTP_OC_CANON_EOS_CancelTransfer2"},
+	{PTP_OC_CANON_EOS_TransferCompleteFTP,"PTP_OC_CANON_EOS_TransferCompleteFTP"},
+	{PTP_OC_CANON_EOS_CancelTransferFTP,"PTP_OC_CANON_EOS_CancelTransferFTP"},
 	{PTP_OC_CANON_EOS_FAPIMessageTX,"PTP_OC_CANON_EOS_FAPIMessageTX"},
 	{PTP_OC_CANON_EOS_FAPIMessageRX,"PTP_OC_CANON_EOS_FAPIMessageRX"},
 	{PTP_OC_CANON_EOS_SetImageRecoveryData,"PTP_OC_CANON_EOS_SetImageRecoveryData"},
@@ -6979,6 +7003,14 @@ ptp_opcode_trans_t ptp_opcode_canon_trans[] = {
 	{PTP_OC_CANON_EOS_NotifyNumberofImported,"PTP_OC_CANON_EOS_NotifyNumberofImported"},
 	{PTP_OC_CANON_EOS_NotifySizeOfPartialDataTransfer,"PTP_OC_CANON_EOS_NotifySizeOfPartialDataTransfer"},
 	{PTP_OC_CANON_EOS_NotifyFinish,"PTP_OC_CANON_EOS_NotifyFinish"},
+	{PTP_OC_CANON_EOS_SetImageRecoveryDataEx,"PTP_OC_CANON_EOS_SetImageRecoveryDataEx"},
+	{PTP_OC_CANON_EOS_GetImageRecoveryListEx,"PTP_OC_CANON_EOS_GetImageRecoveryListEx"},
+	{PTP_OC_CANON_EOS_NotifyAutoTransferStatus,"PTP_OC_CANON_EOS_NotifyAutoTransferStatus"},
+	{PTP_OC_CANON_EOS_GetReducedObject,"PTP_OC_CANON_EOS_GetReducedObject"},
+	{PTP_OC_CANON_EOS_NotifySaveComplete,"PTP_OC_CANON_EOS_NotifySaveComplete"},
+	{PTP_OC_CANON_EOS_GetObjectURL,"PTP_OC_CANON_EOS_GetObjectURL"},
+	{PTP_OC_CANON_SetRemoteShootingMode,"PTP_OC_CANON_SetRemoteShootingMode"},
+	{PTP_OC_CANON_EOS_SetFELock,"PTP_OC_CANON_EOS_SetFELock"},
 };
 
 ptp_opcode_trans_t ptp_opcode_sony_trans[] = {
