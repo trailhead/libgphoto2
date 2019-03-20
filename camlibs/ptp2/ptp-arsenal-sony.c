@@ -410,7 +410,7 @@ _put_Sony_F_ISO_Exp(CONFIG_PUT_ARGS) {
 				expSteps = -3;
 			}
 			// Passing expTargetDividend = 0 means do not set shutterspeed
-			if (expTargetDividend == 0 || (expCurrentDividend == expTargetDividend && expCurrentDivisor == expTargetDivisor)) {
+			if (expTargetDividend == 0 || expSteps == 0) {
 				expComplete = TRUE;
 			} else {
 				// Check to make sure we're not stuck not movie
@@ -561,8 +561,8 @@ _calculate_exposure_steps(PTPDevicePropDesc *dpd, CameraWidget *widgetExp, int t
 	int32_t targetIndex = -1;
 	int32_t currentIndex = -1;
 	const char *choiceVal;
-	char currentBuf[8];
-	char targetBuf[8];
+	char currentBuf[16];
+	char targetBuf[16];
 
 	if (dpd->FormFlag & PTP_DPFF_Enumeration)
 		return (GP_ERROR);
@@ -571,6 +571,9 @@ _calculate_exposure_steps(PTPDevicePropDesc *dpd, CameraWidget *widgetExp, int t
 
 	int currentDivisor = 0;
 	int currentDividend = 0;
+
+	int testDivisor = 1;
+	int testDividend = 0;
 
 	currentDividend = dpd->CurrentValue.u32>>16;
 	currentDivisor = dpd->CurrentValue.u32&0xffff;
@@ -582,7 +585,7 @@ _calculate_exposure_steps(PTPDevicePropDesc *dpd, CameraWidget *widgetExp, int t
 	}
 
 	if (targetExpDivisor == 1) {
-		sprintf(targetBuf, "%d", targetExpDividend);
+		sprintf(targetBuf, "%d", targetExpDividend / targetExpDivisor);
 	} else {
 		sprintf(targetBuf, "%d/%d", targetExpDividend, targetExpDivisor);
 	}
@@ -594,11 +597,19 @@ _calculate_exposure_steps(PTPDevicePropDesc *dpd, CameraWidget *widgetExp, int t
 		if (ret < GP_OK) {
 			return ret;
 		}
-		if (strcmp(choiceVal, currentBuf) == 0) {
+		testDividend = 1;
+		testDivisor = 1;
+		if (sscanf(choiceVal, "%d/%d", &testDividend, &testDivisor) < 1) {
+			return GP_ERROR;
+		}
+		if ((float)testDividend / (float)testDivisor == (float)currentDividend / (float)currentDivisor) {
 			currentIndex = i;
 		}
-		if (strcmp(choiceVal, targetBuf) == 0) {
+		if ((float)testDividend / (float)testDivisor == (float)targetExpDividend / (float)targetExpDivisor) {
 			targetIndex = i;
+		}
+		if (targetIndex != -1 && currentIndex != -1) {
+			break;
 		}
 	}
 
