@@ -2,6 +2,29 @@
 //#define ARSENAL_DEBUG_ISO
 #define ARSENAL_DEBUG_EXPOSURE
 
+typedef struct sony_update_config_info sony_update_config_info; 
+typedef struct sony_update_config_info {
+	uint8_t complete;
+	uint32_t stepsRemain;
+	uint32_t stepsTotalSent;
+
+	uint32_t stepsLastCalc;
+
+	// Time values
+	double stepDelay;										// Minimum time delay between steps
+	double loopStartTime;
+	double loopEndTime;
+	double lastChange;
+	double changeErrorTimeout; 					// No change for x seconds times out
+	double changeRecalcBaseTimeout; 		// The quickest we can expect an F step to complete
+	double changeRecalcPerStepTimeout;  //
+
+	int (*get_current_value)(sony_update_config_info *pInfo, PTPDevicePropDesc *dpd, CameraWidget *widget);
+	int (*calculate_steps)(sony_update_config_info *pInfo, PTPDevicePropDesc *dpd, CameraWidget *widget, int32_t *steps);
+
+	sony_update_config_info *p_next;
+};
+
 static int
 _lookup_widget(CameraWidget*widget, const char *key, CameraWidget **child);
 
