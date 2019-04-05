@@ -4251,8 +4251,8 @@ camera_sony_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pat
 	GP_LOG_D ("ending image availability");
 
 	if (!newobject) {
-		GP_LOG_E("no object found during event polling. try the 0xffffc001 object id");
-		newobject = 0xffffc001;
+		GP_LOG_E("no object found during event polling. perhaps no focus...");
+		return GP_ERROR;
 	}
 	/* FIXME: handle multiple images (as in BurstMode) */
 	C_PTP (ptp_getobjectinfo (params, newobject, &oi));
