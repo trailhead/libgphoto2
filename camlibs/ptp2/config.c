@@ -2698,6 +2698,7 @@ _put_Sony_ISO(CONFIG_PUT_ARGS)
 	char 		*value;
 	uint32_t	u;
 	PTPParams	*params = &(camera->pl->params);
+  sony_update_config_info param_info;
 
 	CR (gp_widget_get_value(widget, &value));
 	if (!strcmp(value,_("Auto ISO"))) {
@@ -2712,8 +2713,12 @@ _put_Sony_ISO(CONFIG_PUT_ARGS)
 	if (!sscanf(value, "%ud", &u))
 		return GP_ERROR;
 
-	if (strstr(value,_("Multi Frame Noise Reduction")))
-		u |= 0x1000000;
+	if (strstr(value,_("Multi Frame Noise Reduction"))) {
+    u |= 0x1000000;
+	} else {
+		_sony_config_iso_struct(&param_info, camera, u);
+		return _sony_multiple_update_loop(&param_info, sizeof(param_info)/sizeof(sony_update_config_info));
+	}
 
 setiso:
 	propval->u32 = u;
@@ -2928,68 +2933,25 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 	struct timeval tv;
 	double startTime, endTime;
 
+	int ret;
+
+  sony_update_config_info param_info;
+
 	gettimeofday(&tv, NULL);
 	startTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
 
 	// Pull the target value
 	CR (gp_widget_get_value (widget, &targetf));
 
-	targetStops = fMaxStops - (float)(log(targetf*targetf) / log(2));
-
-	do {
-
-		C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
-		C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_FNumber, dpd));
-
-		currentf = ((float)dpd->CurrentValue.u16) / 100.0;
-
-		// Check how many stops we need to move
-		currentStops = fMaxStops - (float)(log(currentf*currentf) / log(2));
-
-		// How many moves to get to the target (assumes camera is setup for 1/3rd stops)
-		moves = (currentStops - targetStops) * 3;
-
-		if (moves < 0.1 && moves > -0.1) {
-			break; // close enough
-		} else if (moves > 0) {
-			moveval.u8 = 0x01;
-		} else {
-			moveval.u8 = 0xff;
-		}
-
-		if (moves < 0 && moves > -2) {
-			moves = -1;
-		} else if (moves > 0 && moves < 2) {
-			moves = 1;
-		}
-
-		// Make the number of predicted moves
-		for (int i=0;i < ceil(abs(moves));i++) {
-			C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_FNumber, &moveval, PTP_DTC_UINT8 ));
-			usleep(10000);
-		}
-
-		if (targetf == currentf) {
-			// Hit target value
-			break;
-		}
-
-		// Check to make sure we're not stuck not movie
-		if (fLastValue != 0 && abs(currentf - fLastValue) < 0.3) {
-			// No movement
-			break;
-		}
-		fLastValue = currentf;
-
-		usleep(800000);
-	} while(1);
+  _sony_config_f_number_struct(&param_info, camera, targetf);
+  ret = _sony_multiple_update_loop(&param_info, sizeof(param_info)/sizeof(sony_update_config_info));
 
 	gettimeofday(&tv, NULL);
 	endTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
 
 	printf("Exiting - cycle time = %lf\n", endTime - startTime);
 
- 	return GP_OK;
+ 	return ret;
 }
 
 
