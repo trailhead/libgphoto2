@@ -3309,6 +3309,7 @@ uint16_t ptp_canon_checkevent (PTPParams* params,
 #define ptp_canon_eos_setrequestolcinfogroup(params,igmask)	ptp_generic_no_data(params,PTP_OC_CANON_EOS_SetRequestOLCInfoGroup,1,igmask)
 #define ptp_canon_eos_requestdevicepropvalue(params,prop)	ptp_generic_no_data(params,PTP_OC_CANON_EOS_RequestDevicePropValue,1,prop)
 #define ptp_canon_eos_setrequestrollingpitchinglevel(params,onoff)	ptp_generic_no_data(params,PTP_OC_CANON_EOS_SetRequestRollingPitchingLevel,1,onoff)
+uint16_t ptp_canon_eos_getremotemode (PTPParams*, uint32_t *);
 uint16_t ptp_canon_eos_capture (PTPParams* params, uint32_t *result);
 uint16_t ptp_canon_eos_getevent (PTPParams* params, PTPCanon_changes_entry **entries, int *nrofentries);
 uint16_t ptp_canon_getpartialobject (PTPParams* params, uint32_t handle, 
@@ -3829,6 +3830,8 @@ uint16_t ptp_panasonic_9401 (PTPParams* params, uint32_t x);
 uint16_t ptp_olympus_liveview_image (PTPParams* params, unsigned char **data, unsigned int *size);
 #define ptp_olympus_omd_move_focus(params,direction,step_size) ptp_generic_no_data(params,PTP_OC_OLYMPUS_OMD_MFDrive,2,direction,step_size)
 uint16_t ptp_olympus_omd_capture (PTPParams* params);
+uint16_t ptp_olympus_omd_bulbstart (PTPParams* params);
+uint16_t ptp_olympus_omd_bulbend (PTPParams* params);
 uint16_t ptp_olympus_init_pc_mode (PTPParams* params);
 uint16_t ptp_olympus_sdram_image (PTPParams* params, unsigned char **data, unsigned int *size);
 

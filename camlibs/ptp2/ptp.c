@@ -880,6 +880,46 @@ ptp_olympus_omd_capture (PTPParams* params)
 	free (buffer);
 	return ret;
 }
+/**
+ * ptp_olympus_bulbstart:
+ * params:	PTPParams*
+ *
+ * Starts Olympus Bulb capture.
+ *
+ * Return values: Some PTP_RC_* code.
+ **/
+uint16_t
+ptp_olympus_omd_bulbstart (PTPParams* params)
+{
+	PTPContainer	ptp;
+
+	PTP_CNT_INIT(ptp, PTP_OC_OLYMPUS_OMD_Capture, 0x3); // initiate capture
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_NODATA, 0, NULL, NULL));
+	if ((ptp.Nparam >= 1) && ((ptp.Param1 & 0x7000) == 0x2000))
+		return ptp.Param1;
+	return PTP_RC_OK;
+}
+
+
+/**
+ * ptp_olympus_bulbend:
+ * params:	PTPParams*
+ *
+ * Stops Olympus Bulb capture.
+ *
+ * Return values: Some PTP_RC_* code.
+ **/
+uint16_t
+ptp_olympus_omd_bulbend (PTPParams* params)
+{
+	PTPContainer	ptp;
+
+	PTP_CNT_INIT(ptp, PTP_OC_OLYMPUS_OMD_Capture, 0x6); // initiate capture
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_NODATA, 0, NULL, NULL));
+	if ((ptp.Nparam >= 1) && ((ptp.Param1 & 0x7000) == 0x2000))
+		return ptp.Param1;
+	return PTP_RC_OK;
+}
 
 uint16_t
 ptp_panasonic_liveview_image (PTPParams* params, unsigned char **data, unsigned int *size)
@@ -3257,7 +3297,6 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 		size = 8 + ptp_pack_EOS_ImageFormat( params, NULL, value->u16 );
 		data = malloc( size );
 		if (!data) return PTP_RC_GeneralError;
-		params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
 		ptp_pack_EOS_ImageFormat( params, data + 8, value->u16 );
 		break;
 	case PTP_DPC_CANON_EOS_CustomFuncEx:
@@ -3266,7 +3305,6 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 		size = 8 + ptp_pack_EOS_CustomFuncEx( params, NULL, value->str );
 		data = malloc( size );
 		if (!data) return PTP_RC_GeneralError;
-		params->canon_props[i].dpd.CurrentValue.str = strdup( value->str );
 		ptp_pack_EOS_CustomFuncEx( params, data + 8, value->str );
 		break;
 	default:
@@ -3284,24 +3322,19 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 		case PTP_DTC_UINT8:
 			/*fprintf (stderr, "%x -> %d\n", propcode, value->u8);*/
 			htod8a(&data[8], value->u8);
-			params->canon_props[i].dpd.CurrentValue.u8 = value->u8;
 			break;
 		case PTP_DTC_UINT16:
 		case PTP_DTC_INT16:
 			/*fprintf (stderr, "%x -> %d\n", propcode, value->u16);*/
 			htod16a(&data[8], value->u16);
-			params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
 			break;
 		case PTP_DTC_INT32:
 		case PTP_DTC_UINT32:
 			/*fprintf (stderr, "%x -> %d\n", propcode, value->u32);*/
 			htod32a(&data[8], value->u32);
-			params->canon_props[i].dpd.CurrentValue.u32 = value->u32;
 			break;
 		case PTP_DTC_STR:
 			strcpy((char*)data + 8, value->str);
-			free (params->canon_props[i].dpd.CurrentValue.str);
-			params->canon_props[i].dpd.CurrentValue.str = strdup(value->str);
 			break;
 		}
 	}
@@ -3311,6 +3344,41 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 
 	ret = ptp_transaction(params, &ptp, PTP_DP_SENDDATA, size, &data, NULL);
 	free (data);
+	if (ret == PTP_RC_OK) {
+		/* commit to cache only after successful setting */
+		switch (propcode) {
+		case PTP_DPC_CANON_EOS_ImageFormat:
+		case PTP_DPC_CANON_EOS_ImageFormatCF:
+		case PTP_DPC_CANON_EOS_ImageFormatSD:
+		case PTP_DPC_CANON_EOS_ImageFormatExtHD:
+			/* special handling of ImageFormat properties */
+			params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
+			break;
+		case PTP_DPC_CANON_EOS_CustomFuncEx:
+			/* special handling of CustomFuncEx properties */
+			params->canon_props[i].dpd.CurrentValue.str = strdup( value->str );
+			break;
+		default:
+			switch (datatype) {
+			case PTP_DTC_INT8:
+			case PTP_DTC_UINT8:
+				params->canon_props[i].dpd.CurrentValue.u8 = value->u8;
+				break;
+			case PTP_DTC_UINT16:
+			case PTP_DTC_INT16:
+				params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
+				break;
+			case PTP_DTC_INT32:
+			case PTP_DTC_UINT32:
+				params->canon_props[i].dpd.CurrentValue.u32 = value->u32;
+				break;
+			case PTP_DTC_STR:
+				free (params->canon_props[i].dpd.CurrentValue.str);
+				params->canon_props[i].dpd.CurrentValue.str = strdup(value->str);
+				break;
+			}
+		}
+	}
 	return ret;
 }
 
@@ -4013,6 +4081,30 @@ ptp_nikon_get_preview_image (PTPParams* params, unsigned char **xdata, unsigned 
 	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, xdata, xsize));
 	if (ptp.Nparam > 0)
 		*handle = ptp.Param1;
+	return PTP_RC_OK;
+}
+
+/**
+ * ptp_canon_eos_get_remotemode:
+ *
+ * This command gets the EOS remote mode.
+ *
+ * params:	PTPParams*
+ *
+ * Return values: Some PTP_RC_* code.
+ *
+ **/
+uint16_t
+ptp_canon_eos_getremotemode (PTPParams* params, uint32_t *mode)
+{
+	PTPContainer	ptp;
+
+        PTP_CNT_INIT(ptp, PTP_OC_CANON_EOS_GetRemoteMode);
+
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_NODATA, 0, NULL, NULL));
+	*mode = 0;
+	if (ptp.Nparam > 0)
+		*mode = ptp.Param1;
 	return PTP_RC_OK;
 }
 
