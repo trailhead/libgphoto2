@@ -495,6 +495,19 @@ ptp_canon_eos_getdeviceinfo (PTPParams* params, PTPCanonEOSDeviceInfo*di)
 		return PTP_ERROR_IO;
 }
 
+uint16_t
+ptp_canon_eos_905f (PTPParams* params, uint32_t x)
+{
+	PTPContainer	ptp;
+	unsigned char	*data = NULL;
+	unsigned int	size;
+
+	PTP_CNT_INIT(ptp, 0x905f, x);
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &data, &size));
+	free (data);
+	return PTP_RC_OK;
+}
+
 #ifdef HAVE_LIBXML2
 static int
 traverse_tree (PTPParams *params, int depth, xmlNodePtr node)
@@ -866,6 +879,46 @@ ptp_olympus_omd_capture (PTPParams* params)
 	ret =  ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &buffer, &size);
 	free (buffer);
 	return ret;
+}
+/**
+ * ptp_olympus_bulbstart:
+ * params:	PTPParams*
+ *
+ * Starts Olympus Bulb capture.
+ *
+ * Return values: Some PTP_RC_* code.
+ **/
+uint16_t
+ptp_olympus_omd_bulbstart (PTPParams* params)
+{
+	PTPContainer	ptp;
+
+	PTP_CNT_INIT(ptp, PTP_OC_OLYMPUS_OMD_Capture, 0x3); // initiate capture
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_NODATA, 0, NULL, NULL));
+	if ((ptp.Nparam >= 1) && ((ptp.Param1 & 0x7000) == 0x2000))
+		return ptp.Param1;
+	return PTP_RC_OK;
+}
+
+
+/**
+ * ptp_olympus_bulbend:
+ * params:	PTPParams*
+ *
+ * Stops Olympus Bulb capture.
+ *
+ * Return values: Some PTP_RC_* code.
+ **/
+uint16_t
+ptp_olympus_omd_bulbend (PTPParams* params)
+{
+	PTPContainer	ptp;
+
+	PTP_CNT_INIT(ptp, PTP_OC_OLYMPUS_OMD_Capture, 0x6); // initiate capture
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_NODATA, 0, NULL, NULL));
+	if ((ptp.Nparam >= 1) && ((ptp.Param1 & 0x7000) == 0x2000))
+		return ptp.Param1;
+	return PTP_RC_OK;
 }
 
 uint16_t
@@ -2022,7 +2075,11 @@ ptp_getdevicepropdesc (PTPParams* params, uint16_t propcode,
 		}
 #endif
 	} else {
-		ptp_unpack_DPD(params, data, devicepropertydesc, size);
+		if (!ptp_unpack_DPD(params, data, devicepropertydesc, size)) {
+			ptp_debug(params,"failed to unpack DPD of propcode 0x%04x, likely corrupted?", propcode);
+			free (data);
+			return PTP_RC_InvalidDevicePropFormat;
+		}
 	}
 	free(data);
 	return ret;
@@ -2688,9 +2745,9 @@ ptp_list_folder (PTPParams *params, uint32_t storage, uint32_t handle) {
 		if (changed) ptp_objects_sort (params);
 		return PTP_RC_OK;
 	}
+fallback:
 #endif
 
-fallback:
 	ptp_debug (params, "Listing ... ");
 	if (handle == 0) xhandle = PTP_HANDLER_SPECIAL; /* 0 would mean all */
 	ret = ptp_getobjecthandles (params, storage, 0, xhandle, &handles);
@@ -3240,7 +3297,6 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 		size = 8 + ptp_pack_EOS_ImageFormat( params, NULL, value->u16 );
 		data = malloc( size );
 		if (!data) return PTP_RC_GeneralError;
-		params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
 		ptp_pack_EOS_ImageFormat( params, data + 8, value->u16 );
 		break;
 	case PTP_DPC_CANON_EOS_CustomFuncEx:
@@ -3249,7 +3305,6 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 		size = 8 + ptp_pack_EOS_CustomFuncEx( params, NULL, value->str );
 		data = malloc( size );
 		if (!data) return PTP_RC_GeneralError;
-		params->canon_props[i].dpd.CurrentValue.str = strdup( value->str );
 		ptp_pack_EOS_CustomFuncEx( params, data + 8, value->str );
 		break;
 	default:
@@ -3267,24 +3322,19 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 		case PTP_DTC_UINT8:
 			/*fprintf (stderr, "%x -> %d\n", propcode, value->u8);*/
 			htod8a(&data[8], value->u8);
-			params->canon_props[i].dpd.CurrentValue.u8 = value->u8;
 			break;
 		case PTP_DTC_UINT16:
 		case PTP_DTC_INT16:
 			/*fprintf (stderr, "%x -> %d\n", propcode, value->u16);*/
 			htod16a(&data[8], value->u16);
-			params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
 			break;
 		case PTP_DTC_INT32:
 		case PTP_DTC_UINT32:
 			/*fprintf (stderr, "%x -> %d\n", propcode, value->u32);*/
 			htod32a(&data[8], value->u32);
-			params->canon_props[i].dpd.CurrentValue.u32 = value->u32;
 			break;
 		case PTP_DTC_STR:
 			strcpy((char*)data + 8, value->str);
-			free (params->canon_props[i].dpd.CurrentValue.str);
-			params->canon_props[i].dpd.CurrentValue.str = strdup(value->str);
 			break;
 		}
 	}
@@ -3294,6 +3344,41 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 
 	ret = ptp_transaction(params, &ptp, PTP_DP_SENDDATA, size, &data, NULL);
 	free (data);
+	if (ret == PTP_RC_OK) {
+		/* commit to cache only after successful setting */
+		switch (propcode) {
+		case PTP_DPC_CANON_EOS_ImageFormat:
+		case PTP_DPC_CANON_EOS_ImageFormatCF:
+		case PTP_DPC_CANON_EOS_ImageFormatSD:
+		case PTP_DPC_CANON_EOS_ImageFormatExtHD:
+			/* special handling of ImageFormat properties */
+			params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
+			break;
+		case PTP_DPC_CANON_EOS_CustomFuncEx:
+			/* special handling of CustomFuncEx properties */
+			params->canon_props[i].dpd.CurrentValue.str = strdup( value->str );
+			break;
+		default:
+			switch (datatype) {
+			case PTP_DTC_INT8:
+			case PTP_DTC_UINT8:
+				params->canon_props[i].dpd.CurrentValue.u8 = value->u8;
+				break;
+			case PTP_DTC_UINT16:
+			case PTP_DTC_INT16:
+				params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
+				break;
+			case PTP_DTC_INT32:
+			case PTP_DTC_UINT32:
+				params->canon_props[i].dpd.CurrentValue.u32 = value->u32;
+				break;
+			case PTP_DTC_STR:
+				free (params->canon_props[i].dpd.CurrentValue.str);
+				params->canon_props[i].dpd.CurrentValue.str = strdup(value->str);
+				break;
+			}
+		}
+	}
 	return ret;
 }
 
@@ -3629,6 +3714,10 @@ ptp_sony_getalldevicepropdesc (PTPParams* params)
 	unsigned int		size, readlen;
 	PTPDevicePropDesc	dpd;
 
+	/* for old A900 / A700 who does not have this, but has capture */
+	if (!ptp_operation_issupported(params, PTP_OC_SONY_GetAllDevicePropData))
+		return PTP_RC_OK;
+
 	PTP_CNT_INIT(ptp, PTP_OC_SONY_GetAllDevicePropData);
 	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &data, &size));
 	if (!data)
@@ -3871,7 +3960,7 @@ ptp_generic_getdevicepropdesc (PTPParams *params, uint16_t propcode, PTPDevicePr
 		return PTP_RC_OK;
 	}
 
-	return PTP_RC_OK;
+	return PTP_RC_OperationNotSupported;
 }
 
 /**
@@ -3992,6 +4081,30 @@ ptp_nikon_get_preview_image (PTPParams* params, unsigned char **xdata, unsigned 
 	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, xdata, xsize));
 	if (ptp.Nparam > 0)
 		*handle = ptp.Param1;
+	return PTP_RC_OK;
+}
+
+/**
+ * ptp_canon_eos_get_remotemode:
+ *
+ * This command gets the EOS remote mode.
+ *
+ * params:	PTPParams*
+ *
+ * Return values: Some PTP_RC_* code.
+ *
+ **/
+uint16_t
+ptp_canon_eos_getremotemode (PTPParams* params, uint32_t *mode)
+{
+	PTPContainer	ptp;
+
+        PTP_CNT_INIT(ptp, PTP_OC_CANON_EOS_GetRemoteMode);
+
+	CHECK_PTP_RC(ptp_transaction(params, &ptp, PTP_DP_NODATA, 0, NULL, NULL));
+	*mode = 0;
+	if (ptp.Nparam > 0)
+		*mode = ptp.Param1;
 	return PTP_RC_OK;
 }
 
@@ -5727,6 +5840,9 @@ ptp_get_property_description(PTPParams* params, uint16_t dpc)
 		{PTP_DPC_SONY_ISO, N_("ISO")},				/* 0xD21E */
 		{PTP_DPC_SONY_Movie, N_("Movie")},			/* 0xD2C8 */
 		{PTP_DPC_SONY_StillImage, N_("Still Image")},		/* 0xD2C7 */
+		{PTP_DPC_SONY_SensorCrop, N_("Sensor Crop")},
+		{PTP_DPC_SONY_AutoFocus, N_("Autofocus")},
+		{PTP_DPC_SONY_Capture, N_("Capture")},
 		{0,NULL}
         };
 
@@ -6923,7 +7039,7 @@ ptp_opcode_trans_t ptp_opcode_canon_trans[] = {
 	{PTP_OC_CANON_EOS_GetCTGInfo,"PTP_OC_CANON_EOS_GetCTGInfo"},
 	{PTP_OC_CANON_EOS_GetLensAdjust,"PTP_OC_CANON_EOS_GetLensAdjust"},
 	{PTP_OC_CANON_EOS_SetLensAdjust,"PTP_OC_CANON_EOS_SetLensAdjust"},
-	{PTP_OC_CANON_EOS_GetMusicInfo,"PTP_OC_CANON_EOS_GetMusicInfo"},
+	{PTP_OC_CANON_EOS_ReadyToSendMusic,"PTP_OC_CANON_EOS_ReadyToSendMusic"},
 	{PTP_OC_CANON_EOS_CreateHandle,"PTP_OC_CANON_EOS_CreateHandle"},
 	{PTP_OC_CANON_EOS_SendPartialObjectEx,"PTP_OC_CANON_EOS_SendPartialObjectEx"},
 	{PTP_OC_CANON_EOS_EndSendPartialObjectEx,"PTP_OC_CANON_EOS_EndSendPartialObjectEx"},
@@ -6955,8 +7071,8 @@ ptp_opcode_trans_t ptp_opcode_canon_trans[] = {
 	{PTP_OC_CANON_EOS_GetAEData,"PTP_OC_CANON_EOS_GetAEData"},
 	{PTP_OC_CANON_EOS_NotifyNetworkError,"PTP_OC_CANON_EOS_NotifyNetworkError"},
 	{PTP_OC_CANON_EOS_AdapterTransferProgress,"PTP_OC_CANON_EOS_AdapterTransferProgress"},
-	{PTP_OC_CANON_EOS_TransferComplete2,"PTP_OC_CANON_EOS_TransferComplete2"},
-	{PTP_OC_CANON_EOS_CancelTransfer2,"PTP_OC_CANON_EOS_CancelTransfer2"},
+	{PTP_OC_CANON_EOS_TransferCompleteFTP,"PTP_OC_CANON_EOS_TransferCompleteFTP"},
+	{PTP_OC_CANON_EOS_CancelTransferFTP,"PTP_OC_CANON_EOS_CancelTransferFTP"},
 	{PTP_OC_CANON_EOS_FAPIMessageTX,"PTP_OC_CANON_EOS_FAPIMessageTX"},
 	{PTP_OC_CANON_EOS_FAPIMessageRX,"PTP_OC_CANON_EOS_FAPIMessageRX"},
 	{PTP_OC_CANON_EOS_SetImageRecoveryData,"PTP_OC_CANON_EOS_SetImageRecoveryData"},
@@ -6979,6 +7095,14 @@ ptp_opcode_trans_t ptp_opcode_canon_trans[] = {
 	{PTP_OC_CANON_EOS_NotifyNumberofImported,"PTP_OC_CANON_EOS_NotifyNumberofImported"},
 	{PTP_OC_CANON_EOS_NotifySizeOfPartialDataTransfer,"PTP_OC_CANON_EOS_NotifySizeOfPartialDataTransfer"},
 	{PTP_OC_CANON_EOS_NotifyFinish,"PTP_OC_CANON_EOS_NotifyFinish"},
+	{PTP_OC_CANON_EOS_SetImageRecoveryDataEx,"PTP_OC_CANON_EOS_SetImageRecoveryDataEx"},
+	{PTP_OC_CANON_EOS_GetImageRecoveryListEx,"PTP_OC_CANON_EOS_GetImageRecoveryListEx"},
+	{PTP_OC_CANON_EOS_NotifyAutoTransferStatus,"PTP_OC_CANON_EOS_NotifyAutoTransferStatus"},
+	{PTP_OC_CANON_EOS_GetReducedObject,"PTP_OC_CANON_EOS_GetReducedObject"},
+	{PTP_OC_CANON_EOS_NotifySaveComplete,"PTP_OC_CANON_EOS_NotifySaveComplete"},
+	{PTP_OC_CANON_EOS_GetObjectURL,"PTP_OC_CANON_EOS_GetObjectURL"},
+	{PTP_OC_CANON_SetRemoteShootingMode,"PTP_OC_CANON_SetRemoteShootingMode"},
+	{PTP_OC_CANON_EOS_SetFELock,"PTP_OC_CANON_EOS_SetFELock"},
 };
 
 ptp_opcode_trans_t ptp_opcode_sony_trans[] = {

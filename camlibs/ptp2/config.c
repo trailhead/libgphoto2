@@ -543,7 +543,8 @@ camera_unprepare_canon_eos_capture(Camera *camera, GPContext *context) {
 	PTPParams		*params = &camera->pl->params;
 
 	/* just in case we had autofocus running */
-	CR (ptp_canon_eos_afcancel(params));
+	if (ptp_operation_issupported(params, PTP_OC_CANON_EOS_AfCancel))
+		CR (ptp_canon_eos_afcancel(params));
 
 	if (is_canon_eos_m (params)) {
 		PTPPropertyValue    ct_val;
@@ -665,486 +666,258 @@ struct menu {
 	put_menu_func	putfunc;
 };
 
-struct deviceproptableu8 {
-	char		*label;
-	uint8_t		value;
-	uint16_t	vendor_id;
-};
-
-struct deviceproptableu16 {
-	char		*label;
-	uint16_t	value;
-	uint16_t	vendor_id;
-};
-
-struct deviceproptablei16 {
-	char		*label;
-	int16_t		value;
-	uint16_t	vendor_id;
-};
-
 /* Generic helper function for:
  *
- * ENUM UINT16 propertiess, with potential vendor specific variables.
+ * ENUM xINTxx propertiess, with potential vendor specific variables. \
  */
-static int
-_get_Generic16Table(CONFIG_GET_ARGS, struct deviceproptableu16* tbl, int tblsize) {
-	int i, j;
-	int isset = FALSE, isset2 = FALSE;
-
-	if (!(dpd->FormFlag & (PTP_DPFF_Enumeration|PTP_DPFF_Range))) {
-		GP_LOG_D ("no enumeration/range in 16bit table code... going on");
-	}
-	if (dpd->DataType != PTP_DTC_UINT16) {
-		GP_LOG_D ("no uint16 prop in 16bit table code");
-		return (GP_ERROR);
-	}
-
-	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
-	gp_widget_set_name (*widget, menu->name);
-	if (dpd->FormFlag & PTP_DPFF_Enumeration) {
-		if (!dpd->FORM.Enum.NumberOfValues) {
-			/* fill in with all values we have in the table. */
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].vendor_id == 0) ||
-				    (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (tbl[j].value == dpd->CurrentValue.u16) {
-						gp_widget_set_value (*widget, _(tbl[j].label));
-						isset2 = TRUE;
-					}
-				}
-			}
-			/* fallthrough in case we do not have currentvalue in the table. isset2 = FALSE */
-		}
-		for (i = 0; i<dpd->FORM.Enum.NumberOfValues; i++) {
-			isset = FALSE;
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].value == dpd->FORM.Enum.SupportedValue[i].u16) &&
-				    ((tbl[j].vendor_id == 0) ||
-				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (tbl[j].value == dpd->CurrentValue.u16) {
-						isset2 = TRUE;
-						gp_widget_set_value (*widget, _(tbl[j].label));
-					}
-					isset = TRUE;
-					break;
-				}
-			}
-			if (!isset) {
-				char buf[200];
-				sprintf(buf, _("Unknown value %04x"), dpd->FORM.Enum.SupportedValue[i].u16);
-				gp_widget_add_choice (*widget, buf);
-				if (dpd->FORM.Enum.SupportedValue[i].u16 == dpd->CurrentValue.u16) {
-					isset2 = TRUE;
-					gp_widget_set_value (*widget, buf);
-				}
-			}
-		}
-	}
-	if (dpd->FormFlag & PTP_DPFF_Range) {
-		for (	i = dpd->FORM.Range.MinimumValue.u16;
-			i<=dpd->FORM.Range.MaximumValue.u16;
-			i+= dpd->FORM.Range.StepSize.u16
-		) {
-			isset = FALSE;
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].value == i) &&
-				    ((tbl[j].vendor_id == 0) ||
-				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (i == dpd->CurrentValue.u16) {
-						isset2 = TRUE;
-						gp_widget_set_value (*widget, _(tbl[j].label));
-					}
-					isset = TRUE;
-					break;
-				}
-			}
-			if (!isset) {
-				char buf[200];
-				sprintf(buf, _("Unknown value %04d"), i);
-				gp_widget_add_choice (*widget, buf);
-				if (i == dpd->CurrentValue.u16) {
-					isset2 = TRUE;
-					gp_widget_set_value (*widget, buf);
-				}
-			}
-
-			/* device might report stepsize 0. but we do at least 1 round */
-			if (dpd->FORM.Range.StepSize.u16 == 0)
-				break;
-		}
-	}
-	if (!isset2) {
-		for (j=0;j<tblsize;j++) {
-			if (((tbl[j].vendor_id == 0) ||
-			     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)) &&
-			     (tbl[j].value == dpd->CurrentValue.u16)
-			) {
-				gp_widget_add_choice (*widget, _(tbl[j].label));
-				isset2 = TRUE;
-				gp_widget_set_value (*widget, _(tbl[j].label));
-			}
-		}
-		if (!isset2) {
-			char buf[200];
-			sprintf(buf, _("Unknown value %04x"), dpd->CurrentValue.u16);
-			gp_widget_add_choice (*widget, buf);
-			gp_widget_set_value (*widget, buf);
-		}
-	}
-	return (GP_OK);
+#define GENERIC_TABLE(bits,type,dpc) \
+struct deviceproptable##bits {		\
+	char		*label;		\
+	type		value;		\
+	uint16_t	vendor_id;	\
+};\
+\
+static int \
+_get_Generic##bits##Table(CONFIG_GET_ARGS, struct deviceproptable##bits * tbl, int tblsize) { \
+	int i, j; \
+	int isset = FALSE, isset2 = FALSE; \
+ \
+	if (!(dpd->FormFlag & (PTP_DPFF_Enumeration|PTP_DPFF_Range))) { \
+		GP_LOG_D ("no enumeration/range in %sbit table code... going on", #bits); \
+	} \
+	if (dpd->DataType != dpc) { \
+		GP_LOG_D ("no %s prop in %sbit table code", #bits, #bits); \
+		return GP_ERROR; \
+	} \
+ \
+	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget); \
+	gp_widget_set_name (*widget, menu->name); \
+	if (dpd->FormFlag & PTP_DPFF_Enumeration) { \
+		if (!dpd->FORM.Enum.NumberOfValues) { \
+			/* fill in with all values we have in the table. */ \
+			for (j=0;j<tblsize;j++) { \
+				if ((tbl[j].vendor_id == 0) || \
+				    (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID) \
+				) { \
+					gp_widget_add_choice (*widget, _(tbl[j].label)); \
+					if (tbl[j].value == dpd->CurrentValue.bits) { \
+						gp_widget_set_value (*widget, _(tbl[j].label)); \
+						isset2 = TRUE; \
+					} \
+				} \
+			} \
+			/* fallthrough in case we do not have currentvalue in the table. isset2 = FALSE */ \
+		} \
+		for (i = 0; i<dpd->FORM.Enum.NumberOfValues; i++) { \
+			isset = FALSE; \
+			for (j=0;j<tblsize;j++) { \
+				if ((tbl[j].value == dpd->FORM.Enum.SupportedValue[i].bits) && \
+				    ((tbl[j].vendor_id == 0) || \
+				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)) \
+				) { \
+					gp_widget_add_choice (*widget, _(tbl[j].label)); \
+					if (tbl[j].value == dpd->CurrentValue.bits) { \
+						isset2 = TRUE; \
+						gp_widget_set_value (*widget, _(tbl[j].label)); \
+					} \
+					isset = TRUE; \
+					break; \
+				} \
+			} \
+			if (!isset) { \
+				char buf[200]; \
+				sprintf(buf, _("Unknown value %04x"), dpd->FORM.Enum.SupportedValue[i].bits); \
+				gp_widget_add_choice (*widget, buf); \
+				if (dpd->FORM.Enum.SupportedValue[i].bits == dpd->CurrentValue.bits) { \
+					isset2 = TRUE; \
+					gp_widget_set_value (*widget, buf); \
+				} \
+			} \
+		} \
+	} \
+	if (dpd->FormFlag & PTP_DPFF_Range) { \
+		for (	i = dpd->FORM.Range.MinimumValue.bits; \
+			i<=dpd->FORM.Range.MaximumValue.bits; \
+			i+= dpd->FORM.Range.StepSize.bits \
+		) { \
+			isset = FALSE; \
+			for (j=0;j<tblsize;j++) { \
+				if ((tbl[j].value == i) && \
+				    ((tbl[j].vendor_id == 0) || \
+				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)) \
+				) { \
+					gp_widget_add_choice (*widget, _(tbl[j].label)); \
+					if (i == dpd->CurrentValue.bits) { \
+						isset2 = TRUE; \
+						gp_widget_set_value (*widget, _(tbl[j].label)); \
+					} \
+					isset = TRUE; \
+					break; \
+				} \
+			} \
+			if (!isset) { \
+				char buf[200]; \
+				sprintf(buf, _("Unknown value %04d"), i); \
+				gp_widget_add_choice (*widget, buf); \
+				if (i == dpd->CurrentValue.bits) { \
+					isset2 = TRUE; \
+					gp_widget_set_value (*widget, buf); \
+				} \
+			} \
+ \
+			/* device might report stepsize 0. but we do at least 1 round */ \
+			if (dpd->FORM.Range.StepSize.bits == 0) \
+				break; \
+		} \
+	} \
+	if (!isset2) { \
+		for (j=0;j<tblsize;j++) { \
+			if (((tbl[j].vendor_id == 0) || \
+			     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)) && \
+			     (tbl[j].value == dpd->CurrentValue.bits) \
+			) { \
+				gp_widget_add_choice (*widget, _(tbl[j].label)); \
+				isset2 = TRUE; \
+				gp_widget_set_value (*widget, _(tbl[j].label)); \
+			} \
+		} \
+		if (!isset2) { \
+			char buf[200]; \
+			sprintf(buf, _("Unknown value %04x"), dpd->CurrentValue.bits); \
+			gp_widget_add_choice (*widget, buf); \
+			gp_widget_set_value (*widget, buf); \
+		} \
+	} \
+	return (GP_OK); \
+} \
+\
+\
+static int \
+_put_Generic##bits##Table(CONFIG_PUT_ARGS, struct deviceproptable##bits * tbl, int tblsize) { \
+	char *value; \
+	int i, intval, j; \
+	int foundvalue = 0; \
+	type bits##val = 0; \
+ \
+	CR (gp_widget_get_value (widget, &value)); \
+	for (i=0;i<tblsize;i++) { \
+		if ((!strcmp(_(tbl[i].label),value) || !strcmp(tbl[i].label,value)) && \
+		    ((tbl[i].vendor_id == 0) || (tbl[i].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)) \
+		) { \
+			bits##val = tbl[i].value; \
+			foundvalue = 1; \
+		 \
+			if (dpd->FormFlag & PTP_DPFF_Enumeration) { \
+				for (j = 0; j<dpd->FORM.Enum.NumberOfValues; j++) { \
+					if (bits##val == dpd->FORM.Enum.SupportedValue[j].bits) { \
+						GP_LOG_D ("FOUND right value for %s in the enumeration at val %d", value, bits##val); \
+						propval->bits = bits##val; \
+						return GP_OK; \
+					} \
+				} \
+				GP_LOG_D ("did not find the right value for %s in the enumeration at val %d... continuing", value, bits##val); \
+				/* continue looking, but with this value as fallback */ \
+			} else { \
+				GP_LOG_D ("not an enumeration ... return %s as %d", value, bits##val); \
+				propval->bits = bits##val; \
+				return GP_OK; \
+			} \
+		} \
+	} \
+	if (foundvalue) { \
+		GP_LOG_D ("Using fallback, not found in enum... return %s as %d", value, bits##val); \
+		propval->bits = bits##val; \
+		return GP_OK; \
+	} \
+	if (!sscanf(value, _("Unknown value %04x"), &intval)) { \
+		GP_LOG_E ("failed to find value %s in list", value); \
+		return GP_ERROR; \
+	} \
+	GP_LOG_D ("Using fallback, not found in enum... return %s as %d", value, bits##val); \
+	propval->bits = intval; \
+	return GP_OK; \
 }
 
-
-static int
-_put_Generic16Table(CONFIG_PUT_ARGS, struct deviceproptableu16* tbl, int tblsize) {
-	char *value;
-	int i, intval, j;
-	int foundvalue = 0;
-	uint16_t	u16val = 0;
-
-	CR (gp_widget_get_value (widget, &value));
-	for (i=0;i<tblsize;i++) {
-		if (!strcmp(_(tbl[i].label),value) &&
-		    ((tbl[i].vendor_id == 0) || (tbl[i].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-		) {
-			u16val = tbl[i].value;
-			foundvalue = 1;
-		
-			if (dpd->FormFlag & PTP_DPFF_Enumeration) {
-				for (j = 0; j<dpd->FORM.Enum.NumberOfValues; j++) {
-					if (u16val == dpd->FORM.Enum.SupportedValue[j].u16) {
-						GP_LOG_D ("FOUND right value for %s in the enumeration at val %d", value, u16val);
-						propval->u16 = u16val;
-						return GP_OK;
-					}
-				}
-				GP_LOG_D ("did not find the right value for %s in the enumeration at val %d... continuing", value, u16val);
-				/* continue looking, but with this value as fallback */
-			} else {
-				GP_LOG_D ("not an enumeration ... return %s as %d", value, u16val);
-				propval->u16 = u16val;
-				return GP_OK;
-			}
-		}
-	}
-	if (foundvalue) {
-		GP_LOG_D ("Using fallback, not found in enum... return %s as %d", value, u16val);
-		propval->u16 = u16val;
-		return GP_OK;
-	}
-	if (!sscanf(value, _("Unknown value %04x"), &intval)) {
-		GP_LOG_E ("failed to find value %s in list", value);
-		return (GP_ERROR);
-	}
-	GP_LOG_D ("Using fallback, not found in enum... return %s as %d", value, u16val);
-	propval->u16 = intval;
-	return GP_OK;
-}
+GENERIC_TABLE(u32,uint32_t,PTP_DTC_UINT32)
+GENERIC_TABLE(u16,uint16_t,PTP_DTC_UINT16)
+GENERIC_TABLE(i16,int16_t, PTP_DTC_INT16)
+GENERIC_TABLE(u8, uint8_t, PTP_DTC_UINT8)
+GENERIC_TABLE(i8, int8_t,  PTP_DTC_INT8)
 
 #define GENERIC16TABLE(name,tbl) 			\
 static int						\
 _get_##name(CONFIG_GET_ARGS) {				\
-	return _get_Generic16Table(CONFIG_GET_NAMES,	\
+	return _get_Genericu16Table(CONFIG_GET_NAMES,	\
 		tbl,sizeof(tbl)/sizeof(tbl[0])		\
 	);						\
 }							\
 							\
 static int __unused__					\
 _put_##name(CONFIG_PUT_ARGS) {				\
-	return _put_Generic16Table(CONFIG_PUT_NAMES,	\
+	return _put_Genericu16Table(CONFIG_PUT_NAMES,	\
 		tbl,sizeof(tbl)/sizeof(tbl[0])		\
 	);						\
 }
 
-static int
-_get_GenericI16Table(CONFIG_GET_ARGS, struct deviceproptablei16* tbl, int tblsize) {
-	int i, j;
-	int isset = FALSE, isset2 = FALSE;
-
-	if (!(dpd->FormFlag & (PTP_DPFF_Range|PTP_DPFF_Enumeration))) {
-		GP_LOG_D ("no enumeration/range in 16bit table code");
-	}
-	if (dpd->DataType != PTP_DTC_INT16) {
-		GP_LOG_D ("no int16 prop in 16bit table code");
-		return (GP_ERROR);
-	}
-
-	gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
-	gp_widget_set_name (*widget, menu->name);
-	if (dpd->FormFlag & PTP_DPFF_Enumeration) {
-		if (!dpd->FORM.Enum.NumberOfValues) {
-			/* fill in with all values we have in the table. */
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].vendor_id == 0) ||
-				    (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (tbl[j].value == dpd->CurrentValue.i16) {
-						gp_widget_set_value (*widget, _(tbl[j].label));
-						isset2 = TRUE;
-					}
-				}
-			}
-			/* fallthrough */
-		}
-		for (i = 0; i<dpd->FORM.Enum.NumberOfValues; i++) {
-			isset = FALSE;
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].value == dpd->FORM.Enum.SupportedValue[i].i16) &&
-				    ((tbl[j].vendor_id == 0) ||
-				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (tbl[j].value == dpd->CurrentValue.i16) {
-						gp_widget_set_value (*widget, _(tbl[j].label));
-						isset2 = TRUE;
-					}
-					isset = TRUE;
-					break;
-				}
-			}
-			if (!isset) {
-				char buf[200];
-				sprintf(buf, _("Unknown value %04x"), dpd->FORM.Enum.SupportedValue[i].i16);
-				gp_widget_add_choice (*widget, buf);
-				if (dpd->FORM.Enum.SupportedValue[i].i16 == dpd->CurrentValue.i16)
-					gp_widget_set_value (*widget, buf);
-			}
-		}
-	}
-	if (dpd->FormFlag & PTP_DPFF_Range) {
-		for (i = dpd->FORM.Range.MinimumValue.i16; i<=dpd->FORM.Range.MaximumValue.i16; i+= dpd->FORM.Range.StepSize.i16) {
-			int isset3 = FALSE;
-
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].value == i) &&
-				    ((tbl[j].vendor_id == 0) ||
-				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (i == dpd->CurrentValue.i16) {
-						isset2 = TRUE;
-						gp_widget_set_value (*widget, _(tbl[j].label));
-					}
-					isset3 = TRUE;
-					break;
-				}
-			}
-			if (!isset3) {
-				char buf[200];
-				sprintf(buf, _("Unknown value %04d"), i);
-				gp_widget_add_choice (*widget, buf);
-				if (i == dpd->CurrentValue.i16) {
-					isset2 = TRUE;
-					gp_widget_set_value (*widget, buf);
-				}
-			}
-
-			/* device might report stepsize 0. but we do at least 1 round */
-			if (dpd->FORM.Range.StepSize.i16 == 0)
-				break;
-		}
-	}
-	if (!isset2) {
-		char buf[200];
-
-		/* if we are not in enum or range mode, but have a value, check our internal table */
-		for (j=0;j<tblsize;j++) {
-			if (((tbl[j].vendor_id == 0) ||
-			     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID)) &&
-			     (tbl[j].value == dpd->CurrentValue.i16)
-			) {
-				isset2 = TRUE;
-				gp_widget_add_choice (*widget, _(tbl[j].label));
-				gp_widget_set_value (*widget, _(tbl[j].label));
-				break;
-			}
-		}
-		if (!isset2) {
-			sprintf(buf, _("Unknown value %04x"), dpd->CurrentValue.i16);
-			gp_widget_add_choice (*widget, buf);
-			gp_widget_set_value (*widget, buf);
-		}
-	}
-	return (GP_OK);
-}
-
-
-static int
-_put_GenericI16Table(CONFIG_PUT_ARGS, struct deviceproptablei16* tbl, int tblsize) {
-	char *value;
-	int i, intval;
-
-	CR (gp_widget_get_value (widget, &value));
-	for (i=0;i<tblsize;i++) {
-		if (!strcmp(_(tbl[i].label),value) &&
-		    ((tbl[i].vendor_id == 0) || (tbl[i].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-		) {
-			propval->i16 = tbl[i].value;
-			return GP_OK;
-		}
-	}
-	if (!sscanf(value, _("Unknown value %04d"), &intval)) {
-		GP_LOG_E ("failed to find value %s in list", value);
-		return (GP_ERROR);
-	}
-	propval->i16 = intval;
-	return GP_OK;
+#define GENERIC32TABLE(name,tbl) 			\
+static int						\
+_get_##name(CONFIG_GET_ARGS) {				\
+	return _get_Genericu32Table(CONFIG_GET_NAMES,	\
+		tbl,sizeof(tbl)/sizeof(tbl[0])		\
+	);						\
+}							\
+							\
+static int __unused__					\
+_put_##name(CONFIG_PUT_ARGS) {				\
+	return _put_Genericu32Table(CONFIG_PUT_NAMES,	\
+		tbl,sizeof(tbl)/sizeof(tbl[0])		\
+	);						\
 }
 
 #define GENERICI16TABLE(name,tbl) 			\
 static int						\
 _get_##name(CONFIG_GET_ARGS) {				\
-	return _get_GenericI16Table(CONFIG_GET_NAMES,	\
+	return _get_Generici16Table(CONFIG_GET_NAMES,	\
 		tbl,sizeof(tbl)/sizeof(tbl[0])		\
 	);						\
 }							\
 							\
 static int __unused__					\
 _put_##name(CONFIG_PUT_ARGS) {				\
-	return _put_GenericI16Table(CONFIG_PUT_NAMES,	\
+	return _put_Generici16Table(CONFIG_PUT_NAMES,	\
 		tbl,sizeof(tbl)/sizeof(tbl[0])		\
 	);						\
-}
-
-static int
-_get_Generic8Table(CONFIG_GET_ARGS, struct deviceproptableu8* tbl, int tblsize) {
-	int i, j;
-	int isset = FALSE, isset2 = FALSE;
-
-	if (dpd->FormFlag & PTP_DPFF_Enumeration) {
-		if ((dpd->DataType != PTP_DTC_UINT8) && (dpd->DataType != PTP_DTC_INT8)) {
-			GP_LOG_D ("no int8 prop in 8bit table code");
-			return GP_ERROR;
-		}
-		gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
-		gp_widget_set_name (*widget, menu->name);
-		for (i = 0; i<dpd->FORM.Enum.NumberOfValues; i++) {
-			isset = FALSE;
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].value == dpd->FORM.Enum.SupportedValue[i].u8) &&
-				    ((tbl[j].vendor_id == 0) ||
-				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (tbl[j].value == dpd->CurrentValue.u8) {
-						isset2 = TRUE;
-						gp_widget_set_value (*widget, _(tbl[j].label));
-					}
-					isset = TRUE;
-					break;
-				}
-			}
-			if (!isset) {
-				char buf[200];
-				sprintf(buf, _("Unknown value %04x"), dpd->FORM.Enum.SupportedValue[i].u8);
-				gp_widget_add_choice (*widget, buf);
-				if (dpd->FORM.Enum.SupportedValue[i].u8 == dpd->CurrentValue.u8)
-					gp_widget_set_value (*widget, buf);
-			}
-		}
-		if (!isset2) {
-			char buf[200];
-			sprintf(buf, _("Unknown value %04x"), dpd->CurrentValue.u8);
-			gp_widget_add_choice (*widget, buf);
-			gp_widget_set_value (*widget, buf);
-		}
-		return (GP_OK);
-	}
-	if (dpd->FormFlag & PTP_DPFF_Range) {
-		if ((dpd->DataType != PTP_DTC_UINT8) && (dpd->DataType != PTP_DTC_INT8)) {
-			GP_LOG_D ("no int8 prop in 8bit table code");
-			return GP_ERROR;
-		}
-		gp_widget_new (GP_WIDGET_RADIO, _(menu->label), widget);
-		gp_widget_set_name (*widget, menu->name);
-		for (	i = dpd->FORM.Range.MinimumValue.u8;
-			i <= dpd->FORM.Range.MaximumValue.u8;
-			i+= dpd->FORM.Range.StepSize.u8
-		) {
-			isset = FALSE;
-			for (j=0;j<tblsize;j++) {
-				if ((tbl[j].value == i) &&
-				    ((tbl[j].vendor_id == 0) ||
-				     (tbl[j].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-				) {
-					gp_widget_add_choice (*widget, _(tbl[j].label));
-					if (tbl[j].value == dpd->CurrentValue.u8) {
-						isset2 = TRUE;
-						gp_widget_set_value (*widget, _(tbl[j].label));
-					}
-					isset = TRUE;
-					break;
-				}
-			}
-			if (!isset) {
-				char buf[200];
-				sprintf(buf, _("Unknown value %04x"), i);
-				gp_widget_add_choice (*widget, buf);
-				if (i == dpd->CurrentValue.u8) {
-					isset2 = TRUE;
-					gp_widget_set_value (*widget, buf);
-				}
-			}
-
-			/* device might report stepsize 0. but we do at least 1 round */
-			if (dpd->FORM.Range.StepSize.i16 == 0)
-				break;
-		}
-		if (!isset2) {
-			char buf[200];
-			sprintf(buf, _("Unknown value %04x"), dpd->CurrentValue.u8);
-			gp_widget_add_choice (*widget, buf);
-			gp_widget_set_value (*widget, buf);
-		}
-		return (GP_OK);
-	}
-	return (GP_ERROR);
-}
-
-
-static int
-_put_Generic8Table(CONFIG_PUT_ARGS, struct deviceproptableu8* tbl, int tblsize) {
-	char *value;
-	int i, intval;
-
-	CR (gp_widget_get_value(widget, &value));
-	for (i=0;i<tblsize;i++) {
-		if (!strcmp(_(tbl[i].label),value) &&
-		    ((tbl[i].vendor_id == 0) || (tbl[i].vendor_id == camera->pl->params.deviceinfo.VendorExtensionID))
-		) {
-			propval->u8 = tbl[i].value;
-			return GP_OK;
-		}
-	}
-	if (!sscanf(value, _("Unknown value %04x"), &intval))
-		return (GP_ERROR);
-	propval->u8 = intval;
-	return GP_OK;
 }
 
 #define GENERIC8TABLE(name,tbl) 			\
 static int						\
 _get_##name(CONFIG_GET_ARGS) {				\
-	return _get_Generic8Table(CONFIG_GET_NAMES,	\
+	return _get_Genericu8Table(CONFIG_GET_NAMES,	\
 		tbl,sizeof(tbl)/sizeof(tbl[0])		\
 	);						\
 }							\
 							\
 static int __unused__					\
 _put_##name(CONFIG_PUT_ARGS) {				\
-	return _put_Generic8Table(CONFIG_PUT_NAMES,	\
+	return _put_Genericu8Table(CONFIG_PUT_NAMES,	\
 		tbl,sizeof(tbl)/sizeof(tbl[0])		\
 	);						\
 }
 
+#define GENERICI8TABLE(name,tbl) 			\
+static int						\
+_get_##name(CONFIG_GET_ARGS) {				\
+	return _get_Generici8Table(CONFIG_GET_NAMES,	\
+		tbl,sizeof(tbl)/sizeof(tbl[0])		\
+	);						\
+}							\
+							\
+static int __unused__					\
+_put_##name(CONFIG_PUT_ARGS) {				\
+	return _put_Generici8Table(CONFIG_PUT_NAMES,	\
+		tbl,sizeof(tbl)/sizeof(tbl[0])		\
+	);						\
+}
 
 static int
 _get_AUINT8_as_CHAR_ARRAY(CONFIG_GET_ARGS) {
@@ -1938,14 +1711,45 @@ _put_Canon_ZoomRange(CONFIG_PUT_ARGS)
 	return (GP_OK);
 }
 
+/* This seems perhaps focal length * 1.000.000 */
+static int
+_get_Sony_Zoom(CONFIG_GET_ARGS) {
+	float	f, t, b, s;
+
+	if (dpd->DataType != PTP_DTC_UINT32)
+		return GP_ERROR;
+	if (!(dpd->FormFlag & PTP_DPFF_Range))
+		return GP_ERROR;
+	gp_widget_new (GP_WIDGET_RANGE, _(menu->label), widget);
+	gp_widget_set_name (*widget,menu->name);
+	f = (float)dpd->CurrentValue.u32 / 1000000;
+	b = (float)dpd->FORM.Range.MinimumValue.u32 / 1000000;
+	t = (float)dpd->FORM.Range.MaximumValue.u32 / 1000000;
+	s = 1;
+	gp_widget_set_range (*widget, b, t, s);
+	gp_widget_set_value (*widget, &f);
+	return GP_OK;
+}
+
+static int
+_put_Sony_Zoom(CONFIG_PUT_ARGS)
+{
+	float	f;
+	PTPParams *params = &camera->pl->params;
+
+	CR (gp_widget_get_value(widget, &f));
+	propval->u32 = (uint32_t)f*1000000;
+	return _put_sony_value_u32(params, PTP_DPC_SONY_Zoom, propval->u32, 0);
+}
+
 static int
 _get_Nikon_WBBias(CONFIG_GET_ARGS) {
 	float	f, t, b, s;
 
 	if (dpd->DataType != PTP_DTC_INT8)
-		return (GP_ERROR);
+		return GP_ERROR;
 	if (!(dpd->FormFlag & PTP_DPFF_Range))
-		return (GP_ERROR);
+		return GP_ERROR;
 	gp_widget_new (GP_WIDGET_RANGE, _(menu->label), widget);
 	gp_widget_set_name (*widget,menu->name);
 	f = (float)dpd->CurrentValue.i8;
@@ -2152,6 +1956,21 @@ static struct deviceproptableu16 canon_eos_autoexposuremode[] = {
 };
 GENERIC16TABLE(Canon_EOS_AutoExposureMode,canon_eos_autoexposuremode)
 
+static struct deviceproptableu32 canon_eos_alomode[] = {
+	{ N_("Standard"),				0x10000, 0 },
+	{ N_("Standard (disabled in manual exposure)"),	0x00000, 0 },
+	{ N_("Low"),					0x10101, 0 },
+	{ N_("Low (disabled in manual exposure)"),	0x00101, 0 },
+	{ N_("Off"),					0x10303, 0 },
+	{ N_("Off (disabled in manual exposure)"),	0x00303, 0 },
+	{ N_("High"),					0x10202, 0 },
+	{ N_("High (disabled in manual exposure)"),	0x00202, 0 },
+	{ N_("x1"),	0x1, 0 },
+	{ N_("x2"),	0x2, 0 },
+	{ N_("x3"),	0x3, 0 },
+};
+GENERIC32TABLE(Canon_EOS_AloMode,canon_eos_alomode)
+
 static struct deviceproptableu8 canon_flash[] = {
 	{ N_("off"),				0, 0 },
 	{ N_("auto"),				1, 0 },
@@ -2315,6 +2134,7 @@ static struct deviceproptableu8 canon_eos_picturestyle[] = {
 	{ N_("Faithful"),	0x85, 0 },
 	{ N_("Monochrome"),	0x86, 0 },
 	{ N_("Auto"),		0x87, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("Fine detail"),	0x88, 0 },
 	{ N_("User defined 1"),	0x21, 0 },
 	{ N_("User defined 2"),	0x22, 0 },
 	{ N_("User defined 3"),	0x23, 0 },
@@ -2459,25 +2279,26 @@ static struct deviceproptableu16 canon_selftimer[] = {
 };
 GENERIC16TABLE(Canon_SelfTimer,canon_selftimer)
 
-/* FIXME: Canon EOS 5D Mark III has more enumerations. Need to determine
- * what they mean.
- */
-/* actually it is a flag value, 1 = TFT, 2 = PC */
+/* actually it is a flag value, 1 = TFT, 2 = PC, 4 = MOBILE, 8 = MOBILE2 */
 static struct deviceproptableu16 canon_eos_cameraoutput[] = {
 	{ N_("Off"),		0, 0 }, /*On 5DM3, LCD/TFT is off, mirror down and optical view finder enabled */
 	{ N_("TFT"),		1, 0 },
 	{ N_("PC"), 		2, 0 },
 	{ N_("TFT + PC"), 	3, 0 },
-	/*The below show up as possible on Canon 5D MIII, but unknown what exactly they are */
-	{ N_("Setting 4"),	4, 0 },
-	{ N_("Setting 5"),	5, 0 }, /*5DM3 - Appears to be dup of enum: 1. Probably something else is also enabled. */
-	{ N_("Setting 6"),	6, 0 }, /*5DM3 - Appears to be dup of enum: 2. */
-	{ N_("Setting 7"),	7, 0 }, /*5DM3 - Appears to be dup of enum: 3. */
+	{ N_("MOBILE"),		4, 0 },
+	{ N_("TFT + MOBILE"),	5, 0 },
+	{ N_("PC + MOBILE"),	6, 0 },
+	{ N_("TFT + PC + MOBILE"), 7, 0 },
+	{ N_("MOBILE2"),	8, 0 },
+	{ N_("TFT + MOBILE2"),	9, 0 },
+	{ N_("PC + MOBILE2"),	10, 0 },
+	{ N_("TFT + PC + MOBILE2"), 11, 0 },
 };
 GENERIC16TABLE(Canon_EOS_CameraOutput,canon_eos_cameraoutput)
 
 static struct deviceproptableu16 canon_eos_evfrecordtarget[] = {
 	{ N_("None"),		0, 0 },
+	{ N_("SDRAM"),		3, 0 },
 	{ N_("Card"),		4, 0 },
 };
 GENERIC16TABLE(Canon_EOS_EVFRecordTarget,canon_eos_evfrecordtarget)
@@ -2613,9 +2434,10 @@ GENERIC16TABLE(Canon_ISO,canon_isospeed)
 
 /* see ptp-pack.c:ptp_unpack_EOS_ImageFormat */
 static struct deviceproptableu16 canon_eos_image_format[] = {
-	{ N_("RAW"),				0x0400, 0 },
-	{ N_("mRAW"),				0x1400, 0 },
-	{ N_("sRAW"),				0x2400, 0 },
+	{ N_("RAW"),				0x0c00, 0 },
+	{ N_("mRAW"),				0x1c00, 0 },
+	{ N_("sRAW"),				0x2c00, 0 },
+	{ N_("cRAW"),				0x0b00, 0 },
 	{ N_("Large Fine JPEG"),		0x0300, 0 },
 	{ N_("Large Normal JPEG"),		0x0200, 0 },
 	{ N_("Medium Fine JPEG"),		0x1300, 0 },
@@ -2626,36 +2448,43 @@ static struct deviceproptableu16 canon_eos_image_format[] = {
 	{ N_("Small Normal JPEG"),		0xd200, 0 },
 	{ N_("Smaller JPEG"),			0xe300, 0 },
 	{ N_("Tiny JPEG"),			0xf300, 0 },
-	{ N_("RAW + Large Fine JPEG"),		0x0403, 0 },
-	{ N_("mRAW + Large Fine JPEG"),		0x1403, 0 },
-	{ N_("sRAW + Large Fine JPEG"),		0x2403, 0 },
-	{ N_("RAW + Medium Fine JPEG"),		0x0413, 0 },
-	{ N_("mRAW + Medium Fine JPEG"),	0x1413, 0 },
-	{ N_("sRAW + Medium Fine JPEG"),	0x2413, 0 },
-	{ N_("RAW + Small Fine JPEG"),		0x0423, 0 },
-	{ N_("RAW + Small Fine JPEG"),		0x04d3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("mRAW + Small Fine JPEG"),		0x1423, 0 },
-	{ N_("mRAW + Small Fine JPEG"),		0x14d3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("sRAW + Small Fine JPEG"),		0x2423, 0 },
-	{ N_("sRAW + Small Fine JPEG"),		0x24d3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("RAW + Large Normal JPEG"),	0x0402, 0 },
-	{ N_("mRAW + Large Normal JPEG"),	0x1402, 0 },
-	{ N_("sRAW + Large Normal JPEG"),	0x2402, 0 },
-	{ N_("RAW + Medium Normal JPEG"),	0x0412, 0 },
-	{ N_("mRAW + Medium Normal JPEG"),	0x1412, 0 },
-	{ N_("sRAW + Medium Normal JPEG"),	0x2412, 0 },
-	{ N_("RAW + Small Normal JPEG"),	0x0422, 0 },
-	{ N_("RAW + Small Normal JPEG"),	0x04d2, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("mRAW + Small Normal JPEG"),	0x1422, 0 },
-	{ N_("mRAW + Small Normal JPEG"),	0x14d2, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("sRAW + Small Normal JPEG"),	0x2422, 0 },
-	{ N_("sRAW + Small Normal JPEG"),	0x24d2, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("RAW + Smaller JPEG"),		0x04e3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("mRAW + Smaller JPEG"),		0x14e3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("sRAW + Smaller JPEG"),		0x24e3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("RAW + Tiny JPEG"),		0x04f3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("mRAW + Tiny JPEG"),		0x14f3, 0 }, /*Canon EOS 5D Mark III*/
-	{ N_("sRAW + Tiny JPEG"),		0x24f3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("RAW + Large Fine JPEG"),		0x0c03, 0 },
+	{ N_("mRAW + Large Fine JPEG"),		0x1c03, 0 },
+	{ N_("sRAW + Large Fine JPEG"),		0x2c03, 0 },
+	{ N_("cRAW + Large Fine JPEG"),		0x0b03, 0 },
+	{ N_("RAW + Medium Fine JPEG"),		0x0c13, 0 },
+	{ N_("mRAW + Medium Fine JPEG"),	0x1c13, 0 },
+	{ N_("sRAW + Medium Fine JPEG"),	0x2c13, 0 },
+	{ N_("cRAW + Medium Fine JPEG"),	0x0b13, 0 },
+	{ N_("RAW + Small Fine JPEG"),		0x0c23, 0 },
+	{ N_("RAW + Small Fine JPEG"),		0x0cd3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("mRAW + Small Fine JPEG"),		0x1c23, 0 },
+	{ N_("mRAW + Small Fine JPEG"),		0x1cd3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("sRAW + Small Fine JPEG"),		0x2c23, 0 },
+	{ N_("sRAW + Small Fine JPEG"),		0x2cd3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("cRAW + Small Fine JPEG"),		0x0bd3, 0 },
+	{ N_("RAW + Large Normal JPEG"),	0x0c02, 0 },
+	{ N_("mRAW + Large Normal JPEG"),	0x1c02, 0 },
+	{ N_("sRAW + Large Normal JPEG"),	0x2c02, 0 },
+	{ N_("cRAW + Large Normal JPEG"),	0x0b02, 0 },
+	{ N_("RAW + Medium Normal JPEG"),	0x0c12, 0 },
+	{ N_("mRAW + Medium Normal JPEG"),	0x1c12, 0 },
+	{ N_("sRAW + Medium Normal JPEG"),	0x2c12, 0 },
+	{ N_("cRAW + Medium Normal JPEG"),	0x0b12, 0 },
+	{ N_("RAW + Small Normal JPEG"),	0x0c22, 0 },
+	{ N_("RAW + Small Normal JPEG"),	0x0cd2, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("mRAW + Small Normal JPEG"),	0x1c22, 0 },
+	{ N_("mRAW + Small Normal JPEG"),	0x1cd2, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("sRAW + Small Normal JPEG"),	0x2c22, 0 },
+	{ N_("sRAW + Small Normal JPEG"),	0x2cd2, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("cRAW + Small Normal JPEG"),	0x0bd2, 0 },
+	{ N_("RAW + Smaller JPEG"),		0x0ce3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("mRAW + Smaller JPEG"),		0x1ce3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("sRAW + Smaller JPEG"),		0x2ce3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("cRAW + Smaller JPEG"),		0x0be3, 0 }, /*Canon EOS M50*/
+	{ N_("RAW + Tiny JPEG"),		0x0cf3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("mRAW + Tiny JPEG"),		0x1cf3, 0 }, /*Canon EOS 5D Mark III*/
+	{ N_("sRAW + Tiny JPEG"),		0x2cf3, 0 }, /*Canon EOS 5D Mark III*/
 	/* There are more RAW + 'smallish' JPEG combinations for at least the 5DM3 possible.
 	   Axel was simply to lazy to exercise the combinatorial explosion. :-/ */
 };
@@ -2678,20 +2507,13 @@ static struct deviceproptableu16 canon_eos_aeb[] = {
 };
 GENERIC16TABLE(Canon_EOS_AEB,canon_eos_aeb)
 
-#if 0
-/* actually a 32bit property */
-static struct deviceproptableu16 canon_eos_alomode[] = {
-	/* needs decoding, seems to composed of flags */
-};
-GENERIC16TABLE(Canon_EOS_AloMode,canon_eos_alomode)
-#endif
-
 static struct deviceproptableu16 canon_eos_drive_mode[] = {
 	{ N_("Single"),			0x0000, 0 },
 	{ N_("Continuous"),		0x0001, 0 },
 	{ N_("Continuous high speed"),	0x0004, 0 },
 	{ N_("Continuous low speed"),	0x0005, 0 },
 	{ N_("Single: Silent shooting"),0x0006, 0 },
+	{ N_("Continuous timer"),	0x0007, 0 },
 	{ N_("Timer 10 sec"),		0x0010, 0 },
 	{ N_("Timer 2 sec"),		0x0011, 0 },
 	{ N_("Super high speed continuous shooting"),		0x0012, 0 },
@@ -2782,6 +2604,39 @@ _put_Olympus_ISO(CONFIG_PUT_ARGS)
 		return GP_OK;
 	}
 	return GP_ERROR;
+}
+
+static int
+_get_Olympus_OMD_Bulb(CONFIG_GET_ARGS) {
+	int val;
+
+	gp_widget_new (GP_WIDGET_TOGGLE, _(menu->label), widget);
+	gp_widget_set_name (*widget,menu->name);
+	val = 2; /* always changed */
+	gp_widget_set_value  (*widget, &val);
+	return (GP_OK);
+}
+
+static int
+_put_Olympus_OMD_Bulb(CONFIG_PUT_ARGS)
+{
+	PTPParams *params = &(camera->pl->params);
+	int val;
+	GPContext *context = ((PTPData *) params->data)->context;
+
+	CR (gp_widget_get_value(widget, &val));
+	if (val) {
+		int ret = ptp_olympus_omd_bulbstart (params);
+		if (ret == PTP_RC_GeneralError) {
+			gp_context_error (((PTPData *) camera->pl->params.data)->context,
+			_("For bulb capture to work, make sure the mode dial is switched to 'M' and set 'shutterspeed' to 'bulb'."));
+			return translate_ptp_result (ret);
+		}
+		C_PTP_REP (ret);
+	} else {
+		C_PTP_REP (ptp_olympus_omd_bulbend (params));
+	}
+	return GP_OK;
 }
 
 static int
@@ -4147,20 +4002,19 @@ _get_Olympus_ShutterSpeed(CONFIG_GET_ARGS) {
 	gp_widget_set_name (*widget, menu->name);
 
 	for (i = 0; i<dpd->FORM.Enum.NumberOfValues; i++) {
-/* Nikon... replace with Olympus values
-		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xffffffff) {
+		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffc) {
 			sprintf(buf,_("Bulb"));
 			goto choicefound;
 		}
-		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffe) {
-			sprintf(buf,_("x 200"));
-			goto choicefound;
-		}
-		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffd) {
+		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffa) {
+		 	sprintf(buf,_("Composite"));
+		 	goto choicefound;
+		 }
+		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffb) {
 			sprintf(buf,_("Time"));
 			goto choicefound;
 		}
-*/
+
 		x = dpd->FORM.Enum.SupportedValue[i].u32>>16;
 		y = dpd->FORM.Enum.SupportedValue[i].u32&0xffff;
 
@@ -4173,9 +4027,9 @@ _get_Olympus_ShutterSpeed(CONFIG_GET_ARGS) {
 		} else {
 			sprintf (buf, "%d/%d",x,y);
 		}
-/*
+
 choicefound:
-*/
+
 		gp_widget_add_choice (*widget,buf);
 		if (dpd->CurrentValue.u32 == dpd->FORM.Enum.SupportedValue[i].u32) {
 			gp_widget_set_value (*widget, buf);
@@ -4202,20 +4056,18 @@ _put_Olympus_ShutterSpeed(CONFIG_PUT_ARGS) {
 
 	gp_widget_get_value (widget, &value_str);
 
-/* Nikon... replace with Olympus values
 	if (!strcmp(value_str,_("Bulb"))) {
-		propval->u32 = 0xffffffff;
+		propval->u32 = 0xfffffffc;
 		return GP_OK;
 	}
-	if (!strcmp(value_str,_("x 200"))) {
-		propval->u32 = 0xfffffffe;
-		return GP_OK;
-	}
+	if (!strcmp(value_str,_("Composite"))) {
+	 	propval->u32 = 0xfffffffa;
+	 	return GP_OK;
+	 }
 	if (!strcmp(value_str,_("Time"))) {
-		propval->u32 = 0xfffffffd;
+		propval->u32 = 0xfffffffb;
 		return GP_OK;
 	}
-*/
 
 	if (strchr(value_str, '/')) {
 		if (2 != sscanf (value_str, "%d/%d", &x, &y))
@@ -4223,8 +4075,10 @@ _put_Olympus_ShutterSpeed(CONFIG_PUT_ARGS) {
 	} else {
 		if (!sscanf (value_str, "%d", &x))
 			return GP_ERROR;
-		y = 1;
+		y = 10;
+		x *=10;
 	}
+
 	propval->u32 = (x<<16) | y;
 	return GP_OK;
 }
@@ -4703,7 +4557,14 @@ static struct deviceproptableu8 nikon_liveviewaf[] = {
 	{ N_("Normal-area AF"),		2, 0 },
 	{ N_("Subject-tracking AF"),	3, 0 },
 };
-GENERIC8TABLE(Nikon_LiveViewAF,nikon_liveviewaf)
+GENERIC8TABLE(Nikon_LiveViewAFU,nikon_liveviewaf)
+static struct deviceproptablei8 nikon_liveviewafi[] = {
+	{ N_("Face-priority AF"),	0, 0 },
+	{ N_("Wide-area AF"),		1, 0 },
+	{ N_("Normal-area AF"),		2, 0 },
+	{ N_("Subject-tracking AF"),	3, 0 },
+};
+GENERICI8TABLE(Nikon_LiveViewAFI,nikon_liveviewafi)
 
 static struct deviceproptableu8 nikon_liveviewaffocus[] = {
 	{ N_("Single-servo AF"),	0, 0 },
@@ -5012,6 +4873,7 @@ static struct deviceproptableu8 canon_eos_whitebalance[] = {
 	{ N_("Custom WB 3"),	16, 0 },
 	{ N_("Custom WB 4"),	18, 0 },
 	{ N_("Custom WB 5"),	19, 0 },
+	{ N_("AWB White"),	23, 0 },
 };
 GENERIC8TABLE(Canon_EOS_WhiteBalance,canon_eos_whitebalance)
 
@@ -5522,7 +5384,7 @@ static struct deviceproptableu8 nikon_d3s_padvpvalue[] = {
 };
 GENERIC8TABLE(Nikon_D3s_PADVPValue,nikon_d3s_padvpvalue)
 
-static struct deviceproptableu8 nikon_d90_activedlighting[] = {
+static struct deviceproptablei8 nikon_d90_activedlighting[] = {
 	{ N_("Extra high"), 0x00,   0 },
 	{ N_("High"),       0x01,   0 },
 	{ N_("Normal"),     0x02,   0 },
@@ -5530,9 +5392,9 @@ static struct deviceproptableu8 nikon_d90_activedlighting[] = {
 	{ N_("Off"),        0x04,   0 },
 	{ N_("Auto"),       0x05,   0 },
 };
-GENERIC8TABLE(Nikon_D90_ActiveDLighting,nikon_d90_activedlighting)
+GENERICI8TABLE(Nikon_D90_ActiveDLighting,nikon_d90_activedlighting)
 
-static struct deviceproptableu8 nikon_d850_activedlighting[] = {
+static struct deviceproptablei8 nikon_d850_activedlighting[] = {
 	{ N_("Auto"), 		0x00,   0 },
 	{ N_("Off"),       	0x01,   0 },
 	{ N_("Low"),     	0x02,   0 },
@@ -5540,7 +5402,7 @@ static struct deviceproptableu8 nikon_d850_activedlighting[] = {
 	{ N_("High"),       0x04,   0 },
 	{ N_("Extra high"), 0x05,   0 },
 };
-GENERIC8TABLE(Nikon_D850_ActiveDLighting,nikon_d850_activedlighting)
+GENERICI8TABLE(Nikon_D850_ActiveDLighting,nikon_d850_activedlighting)
 
 static struct deviceproptableu8 nikon_1_compression[] = {
 	{ N_("JPEG Normal"),	0x00, PTP_VENDOR_NIKON },
@@ -5619,6 +5481,12 @@ static struct deviceproptableu8 compressionsetting[] = {
 };
 GENERIC8TABLE(CompressionSetting,compressionsetting)
 
+static struct deviceproptableu8 sony_sensorcrop[] = {
+	{ N_("Off"),	0x01, 0 },
+	{ N_("On"),	0x02, 0 },
+};
+GENERIC8TABLE(Sony_SensorCrop,sony_sensorcrop)
+
 /* Sony specific, we need to wait for it settle (around 1 second), otherwise we get trouble later on */
 static int
 _put_Sony_CompressionSetting(CONFIG_PUT_ARGS) {
@@ -5657,13 +5525,13 @@ static struct deviceproptableu16 canon_eos_highisonr[] = {
 
 GENERIC16TABLE(Canon_EOS_HighIsoNr,canon_eos_highisonr)
 
-static struct deviceproptableu8 nikon_d90_highisonr[] = {
+static struct deviceproptablei8 nikon_d90_highisonr[] = {
 	{ N_("Off"),	0, 0 },
 	{ N_("Low"),	1, 0 },
 	{ N_("Normal"),	2, 0 },
 	{ N_("High"),	3, 0 },
 };
-GENERIC8TABLE(Nikon_D90_HighISONR,nikon_d90_highisonr)
+GENERICI8TABLE(Nikon_D90_HighISONR,nikon_d90_highisonr)
 
 static struct deviceproptableu8 nikon_1_highisonr[] = {
 	{ N_("On"),	0, 0 },
@@ -6782,15 +6650,46 @@ _put_Canon_AFMethod(CONFIG_PUT_ARGS) {
 	return GP_OK;
 }
 
+_get_Canon_RemoteMode(CONFIG_GET_ARGS) {
+	char		buf[200];
+	PTPParams	*params = &(camera->pl->params);
+	uint32_t	mode;
+
+	gp_widget_new (GP_WIDGET_TEXT, _(menu->label), widget);
+	gp_widget_set_name (*widget, menu->name);
+	if (ptp_operation_issupported (params, PTP_OC_CANON_EOS_GetRemoteMode)) {
+		C_PTP (ptp_canon_eos_getremotemode (params, &mode));
+		sprintf (buf, "%d", mode);
+	} else {
+		strcpy (buf, "0");
+	}
+	return gp_widget_set_value  (*widget, buf);
+}
+
+static int
+_put_Canon_RemoteMode(CONFIG_PUT_ARGS) {
+	uint32_t	mode;
+	char		*val;
+	PTPParams	*params = &(camera->pl->params);
+
+	CR (gp_widget_get_value(widget, &val));
+	if (!sscanf (val, "%d", &mode))
+		return GP_ERROR;
+	C_PTP (ptp_canon_eos_setremotemode (params, mode));
+	return GP_OK;
+}
+
+
 static int
 _get_Canon_EOS_ViewFinder(CONFIG_GET_ARGS) {
 	int val;
+	PTPParams		*params = &(camera->pl->params);
 
 	gp_widget_new (GP_WIDGET_TOGGLE, _(menu->label), widget);
 	gp_widget_set_name (*widget, menu->name);
-	val = 2;	/* always changed, unless we can find out the state ... */
+	val = params->inliveview;	/* try returning live view mode */
 	gp_widget_set_value  (*widget, &val);
-	return (GP_OK);
+	return GP_OK;
 }
 
 static int
@@ -6815,10 +6714,10 @@ _put_Canon_EOS_ViewFinder(CONFIG_PUT_ARGS) {
 		}
 	}
 	if (val)
-		xval.u32 = 2;
+		xval.u16 = 2;
 	else
-		xval.u32 = 0;
-	C_PTP_MSG (ptp_canon_eos_setdevicepropvalue (params, PTP_DPC_CANON_EOS_EVFOutputDevice, &xval, PTP_DTC_UINT32),
+		xval.u16 = 0;
+	C_PTP_MSG (ptp_canon_eos_setdevicepropvalue (params, PTP_DPC_CANON_EOS_EVFOutputDevice, &xval, PTP_DTC_UINT16),
 		   "ptp2_eos_viewfinder enable", "setval of evf outputmode to %d failed", xval.u32);
 	return GP_OK;
 }
@@ -7826,6 +7725,27 @@ _put_Canon_EOS_UILock(CONFIG_PUT_ARGS)
 }
 
 static int
+_get_Canon_EOS_PopupFlash(CONFIG_GET_ARGS) {
+	int val;
+
+	gp_widget_new (GP_WIDGET_TOGGLE, _(menu->label), widget);
+	gp_widget_set_name (*widget,menu->name);
+	val = 2; /* always changed */
+	gp_widget_set_value  (*widget, &val);
+	return GP_OK;
+}
+
+static int
+_put_Canon_EOS_PopupFlash(CONFIG_PUT_ARGS)
+{
+	PTPParams *params = &(camera->pl->params);
+	GPContext *context = ((PTPData *) params->data)->context;
+
+	C_PTP_REP (ptp_canon_eos_popupflash (params));
+	return GP_OK;
+}
+
+static int
 _get_Nikon_FastFS(CONFIG_GET_ARGS) {
 	int val;
 	char buf[1024];
@@ -8512,7 +8432,9 @@ static struct submenu camera_actions_menu[] = {
 	{ N_("Bulb Mode"),                      "bulb",             PTP_DPC_SONY_StillImage,PTP_VENDOR_SONY,   0,               _get_Sony_Bulb,                 _put_Sony_Bulb },
 	{ N_("Bulb Mode"),                      "bulb",             0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_BulbStart,         _get_Canon_EOS_Bulb,            _put_Canon_EOS_Bulb },
 	{ N_("Bulb Mode"),                      "bulb",             0,  PTP_VENDOR_NIKON,   PTP_OC_NIKON_TerminateCapture,      _get_Nikon_Bulb,                _put_Nikon_Bulb },
+	{ N_("Bulb Mode"),                      "bulb",             0,  PTP_VENDOR_GP_OLYMPUS_OMD,   PTP_OC_OLYMPUS_OMD_Capture,      _get_Olympus_OMD_Bulb,                _put_Olympus_OMD_Bulb },
 	{ N_("UI Lock"),                        "uilock",           0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_SetUILock,         _get_Canon_EOS_UILock,          _put_Canon_EOS_UILock },
+	{ N_("Popup Flash"),                    "popupflash",       0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_PopupBuiltinFlash, _get_Canon_EOS_PopupFlash,      _put_Canon_EOS_PopupFlash },
 	{ N_("Drive Nikon DSLR Autofocus"),     "autofocusdrive",   0,  PTP_VENDOR_NIKON,   PTP_OC_NIKON_AfDrive,               _get_Nikon_AFDrive,             _put_Nikon_AFDrive },
 	{ N_("Drive Canon DSLR Autofocus"),     "autofocusdrive",   0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_DoAf,              _get_Canon_EOS_AFDrive,         _put_Canon_EOS_AFDrive },
 	{ N_("Drive Nikon DSLR Manual focus"),  "manualfocusdrive", 0,  PTP_VENDOR_NIKON,   PTP_OC_NIKON_MfDrive,               _get_Nikon_MFDrive,             _put_Nikon_MFDrive },
@@ -8612,14 +8534,15 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("Menus and Playback"),     "menusandplayback",     PTP_DPC_NIKON_MenusAndPlayback,     PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_MenusAndPlayback,    _put_Nikon_MenusAndPlayback },
 
 /* virtual */
-	{ N_("Fast Filesystem"),	      "fastfs",	0,  PTP_VENDOR_NIKON,   0,  _get_Nikon_FastFS,      _put_Nikon_FastFS },
-	{ N_("Capture Target"),		      "capturetarget",0,  PTP_VENDOR_NIKON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("Autofocus"),		          "autofocus",    0,  PTP_VENDOR_NIKON,   0,  _get_Autofocus,         _put_Autofocus },
-	{ N_("Capture Target"),					"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("Capture Target"),					"capturetarget",0,  PTP_VENDOR_PANASONIC,0, _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("CHDK"),     							"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
-	{ N_("Capture"),								"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
+	{ N_("Fast Filesystem"),	"fastfs",	0,  PTP_VENDOR_NIKON,   0,  _get_Nikon_FastFS,      _put_Nikon_FastFS },
+	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_NIKON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("Autofocus"),		"autofocus",    0,  PTP_VENDOR_NIKON,   0,  _get_Autofocus,         _put_Autofocus },
+	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_PANASONIC,0, _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("CHDK"),     		"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
+	{ N_("Capture"),		"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
 	{ N_("AF Method"),						  "afmethod", PTP_DPC_CANON_EOS_LvAfSystem,  PTP_VENDOR_CANON,   PTP_DTC_UINT32,  _get_Canon_AFMethod,     _put_Canon_AFMethod },
+	{ N_("Remote Mode"),		"remotemode",	PTP_OC_CANON_EOS_SetRemoteMode,  PTP_VENDOR_CANON,   0,  _get_Canon_RemoteMode, _put_Canon_RemoteMode },
 	{ 0,0,0,0,0,0,0 },
 };
 
@@ -8672,6 +8595,7 @@ static struct submenu capture_settings_menu[] = {
 	{ N_("Auto Focus Mode 2"),              "autofocusmode2",           PTP_DPC_NIKON_A4AFActivation,           PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,             _put_Nikon_OnOff_UINT8 },
 	{ N_("Zoom"),                           "zoom",                     PTP_DPC_CANON_Zoom,                     PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_ZoomRange,               _put_Canon_ZoomRange },
 	{ N_("Zoom"),                           "zoom",                     PTP_DPC_CANON_EOS_PowerZoomPosition,    PTP_VENDOR_CANON,   PTP_DTC_UINT32, _get_INT,                           _put_INT },
+	{ N_("Zoom"),                           "zoom",                     PTP_DPC_SONY_Zoom,    	            PTP_VENDOR_SONY,    PTP_DTC_UINT32, _get_Sony_Zoom,                     _put_Sony_Zoom },
 	{ N_("Zoom Speed"),                     "zoomspeed",                PTP_DPC_CANON_EOS_PowerZoomSpeed,       PTP_VENDOR_CANON,   PTP_DTC_UINT32, _get_INT,                           _put_INT },
 	{ N_("Assist Light"),                   "assistlight",              PTP_DPC_CANON_AssistLight,              PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_AssistLight,             _put_Canon_AssistLight },
 	{ N_("Rotation Flag"),                  "autorotation",             PTP_DPC_CANON_RotationScene,            PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_AutoRotation,            _put_Canon_AutoRotation },
@@ -8772,8 +8696,8 @@ static struct submenu capture_settings_menu[] = {
 	{ N_("Exposure Delay Mode"),            "exposuredelaymode",        PTP_DPC_NIKON_ExposureDelayMode,        PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,             _put_Nikon_OnOff_UINT8 },
 	{ N_("Exposure Lock"),                  "exposurelock",             PTP_DPC_NIKON_AELockMode,               PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,             _put_Nikon_OnOff_UINT8 },
 	{ N_("AE-L/AF-L Mode"),                 "aelaflmode",               PTP_DPC_NIKON_AELAFLMode,               PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_AELAFLMode,              _put_Nikon_AELAFLMode },
-	{ N_("Live View AF Mode"),              "liveviewafmode",           PTP_DPC_NIKON_LiveViewAFArea,           PTP_VENDOR_NIKON,   PTP_DTC_INT8,   _get_Nikon_LiveViewAF,              _put_Nikon_LiveViewAF },
-	{ N_("Live View AF Mode"),              "liveviewafmode",           PTP_DPC_NIKON_LiveViewAFArea,           PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_LiveViewAF,              _put_Nikon_LiveViewAF },
+	{ N_("Live View AF Mode"),              "liveviewafmode",           PTP_DPC_NIKON_LiveViewAFArea,           PTP_VENDOR_NIKON,   PTP_DTC_INT8,   _get_Nikon_LiveViewAFI,             _put_Nikon_LiveViewAFI },
+	{ N_("Live View AF Mode"),              "liveviewafmode",           PTP_DPC_NIKON_LiveViewAFArea,           PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_LiveViewAFU,             _put_Nikon_LiveViewAFU },
 	{ N_("Live View AF Focus"),             "liveviewaffocus",          PTP_DPC_NIKON_LiveViewAFFocus,          PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_LiveViewAFFocus,         _put_Nikon_LiveViewAFFocus },
 	{ N_("File Number Sequencing"),         "filenrsequencing",         PTP_DPC_NIKON_FileNumberSequence,       PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,             _put_Nikon_OnOff_UINT8 },
 	{ N_("Flash Sign"),                     "flashsign",                PTP_DPC_NIKON_FlashSign,                PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,             _put_Nikon_OnOff_UINT8 },
@@ -8831,15 +8755,14 @@ static struct submenu capture_settings_menu[] = {
 	{ N_("Saturation"),                     "saturation",               PTP_DPC_NIKON_Saturation,               PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_Saturation,              _put_Nikon_Saturation },
 	{ N_("Hue Adjustment"),                 "hueadjustment",            PTP_DPC_NIKON_HueAdjustment,            PTP_VENDOR_NIKON,   PTP_DTC_INT8,   _get_Nikon_HueAdjustment,           _put_Nikon_HueAdjustment },
 	{ N_("Auto Exposure Bracketing"),       "aeb",                      PTP_DPC_CANON_EOS_AEB,                  PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_EOS_AEB,                 _put_Canon_EOS_AEB },
-#if 0
 	{ N_("Auto Lighting Optimization"),     "alomode",                  PTP_DPC_CANON_EOS_AloMode,              PTP_VENDOR_CANON,   PTP_DTC_UINT16, _get_Canon_EOS_AloMode,             _put_Canon_EOS_AloMode },
-#endif
 	{ N_("Movie Sound"),                    "moviesound",               PTP_DPC_NIKON_MovVoice,                 PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OffOn_UINT8,             _put_Nikon_OffOn_UINT8 },
 	{ N_("Manual Movie Setting"),           "manualmoviesetting",       PTP_DPC_NIKON_ManualMovieSetting,       PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OnOff_UINT8,             _put_Nikon_OnOff_UINT8 },
 	{ N_("Microphone"),                     "microphone",               PTP_DPC_NIKON_MovMicrophone,            PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_Microphone,              _put_Nikon_Microphone },
 	{ N_("Reverse Indicators"),             "reverseindicators",        PTP_DPC_NIKON_IndicatorDisp,            PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OffOn_UINT8,             _put_Nikon_OffOn_UINT8 },
 	{ N_("Auto Distortion Control"),        "autodistortioncontrol",    PTP_DPC_NIKON_AutoDistortionControl,    PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_OffOn_UINT8,             _put_Nikon_OffOn_UINT8 },
 	{ N_("Video Mode"),                     "videomode",                PTP_DPC_NIKON_VideoMode,                PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_VideoMode,               _put_Nikon_VideoMode },
+	{ N_("Sensor Crop"),                    "sensorcrop",               PTP_DPC_SONY_SensorCrop,                PTP_VENDOR_SONY,    PTP_DTC_UINT8,  _get_Sony_SensorCrop,               _put_Sony_SensorCrop },
 
 	{ 0,0,0,0,0,0,0 },
 };
@@ -9521,7 +9444,7 @@ _set_config (Camera *camera, const char *confname, CameraWidget *window, GPConte
 					if (dpd.GetSet == PTP_DPGS_GetSet) {
 						ret = cursub->putfunc (camera, widget, &propval, &dpd);
 					} else {
-						gp_context_error (context, _("Sorry, the property '%s' / 0x%04x is currently ready-only."), _(cursub->label), cursub->propid);
+						gp_context_error (context, _("Sorry, the property '%s' / 0x%04x is currently read-only."), _(cursub->label), cursub->propid);
 						ret = GP_ERROR_NOT_SUPPORTED;
 					}
 					if (ret == GP_OK) {
@@ -9538,7 +9461,7 @@ _set_config (Camera *camera, const char *confname, CameraWidget *window, GPConte
 					ret = cursub->putfunc (camera, widget, NULL, NULL);
 				}
 				if (mode == MODE_SINGLE_SET)
-					return GP_OK;
+					return ret;
 			}
 			if (have_eos_prop(params,cursub->vendorid,cursub->propid)) {
 				PTPDevicePropDesc	dpd;
@@ -9567,7 +9490,7 @@ _set_config (Camera *camera, const char *confname, CameraWidget *window, GPConte
 					ret = cursub->putfunc (camera, widget, &propval, &dpd);
 				}
 				if (mode == MODE_SINGLE_SET)
-					return GP_OK;
+					return ret;
 			}
 			if (ret != GP_OK)
 				return ret;
@@ -9612,7 +9535,7 @@ _set_config (Camera *camera, const char *confname, CameraWidget *window, GPConte
 		if (ret != PTP_RC_OK)
 			continue;
 		if (dpd.GetSet != PTP_DPGS_GetSet) {
-			gp_context_error (context, _("Sorry, the property '%s' / 0x%04x is currently ready-only."), _(label), propid);
+			gp_context_error (context, _("Sorry, the property '%s' / 0x%04x is currently read-only."), _(label), propid);
 			return GP_ERROR_NOT_SUPPORTED;
 		}
 
