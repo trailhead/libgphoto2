@@ -1,6 +1,6 @@
-#define ARSENAL_DEBUG_FNUMBER
-#define ARSENAL_DEBUG_ISO
-#define ARSENAL_DEBUG_EXPOSURE
+//#define ARSENAL_DEBUG_FNUMBER
+//#define ARSENAL_DEBUG_ISO
+//#define ARSENAL_DEBUG_EXPOSURE
 
 typedef struct {
   uint16_t dividend;                  // Ex: 1/10 sec, dividend is 10
