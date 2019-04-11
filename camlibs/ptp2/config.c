@@ -6592,6 +6592,36 @@ _put_Canon_AFMethod(CONFIG_PUT_ARGS) {
 	return GP_OK;
 }
 
+_get_Canon_RemoteMode(CONFIG_GET_ARGS) {
+	char		buf[200];
+	PTPParams	*params = &(camera->pl->params);
+	uint32_t	mode;
+
+	gp_widget_new (GP_WIDGET_TEXT, _(menu->label), widget);
+	gp_widget_set_name (*widget, menu->name);
+	if (ptp_operation_issupported (params, PTP_OC_CANON_EOS_GetRemoteMode)) {
+		C_PTP (ptp_canon_eos_getremotemode (params, &mode));
+		sprintf (buf, "%d", mode);
+	} else {
+		strcpy (buf, "0");
+	}
+	return gp_widget_set_value  (*widget, buf);
+}
+
+static int
+_put_Canon_RemoteMode(CONFIG_PUT_ARGS) {
+	uint32_t	mode;
+	char		*val;
+	PTPParams	*params = &(camera->pl->params);
+
+	CR (gp_widget_get_value(widget, &val));
+	if (!sscanf (val, "%d", &mode))
+		return GP_ERROR;
+	C_PTP (ptp_canon_eos_setremotemode (params, mode));
+	return GP_OK;
+}
+
+
 static int
 _get_Canon_EOS_ViewFinder(CONFIG_GET_ARGS) {
 	int val;
@@ -8444,14 +8474,15 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("Menus and Playback"),     "menusandplayback",     PTP_DPC_NIKON_MenusAndPlayback,     PTP_VENDOR_NIKON,   PTP_DTC_UINT8,  _get_Nikon_MenusAndPlayback,    _put_Nikon_MenusAndPlayback },
 
 /* virtual */
-	{ N_("Fast Filesystem"),	      "fastfs",	0,  PTP_VENDOR_NIKON,   0,  _get_Nikon_FastFS,      _put_Nikon_FastFS },
-	{ N_("Capture Target"),		      "capturetarget",0,  PTP_VENDOR_NIKON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("Autofocus"),		          "autofocus",    0,  PTP_VENDOR_NIKON,   0,  _get_Autofocus,         _put_Autofocus },
-	{ N_("Capture Target"),					"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("Capture Target"),					"capturetarget",0,  PTP_VENDOR_PANASONIC,0, _get_CaptureTarget,     _put_CaptureTarget },
-	{ N_("CHDK"),     							"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
-	{ N_("Capture"),								"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
+	{ N_("Fast Filesystem"),	"fastfs",	0,  PTP_VENDOR_NIKON,   0,  _get_Nikon_FastFS,      _put_Nikon_FastFS },
+	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_NIKON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("Autofocus"),		"autofocus",    0,  PTP_VENDOR_NIKON,   0,  _get_Autofocus,         _put_Autofocus },
+	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_CANON,   0,  _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("Capture Target"),		"capturetarget",0,  PTP_VENDOR_PANASONIC,0, _get_CaptureTarget,     _put_CaptureTarget },
+	{ N_("CHDK"),     		"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
+	{ N_("Capture"),		"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
 	{ N_("AF Method"),						  "afmethod", PTP_DPC_CANON_EOS_LvAfSystem,  PTP_VENDOR_CANON,   PTP_DTC_UINT32,  _get_Canon_AFMethod,     _put_Canon_AFMethod },
+	{ N_("Remote Mode"),		"remotemode",	PTP_OC_CANON_EOS_SetRemoteMode,  PTP_VENDOR_CANON,   0,  _get_Canon_RemoteMode, _put_Canon_RemoteMode },
 	{ N_("F Stop, ISO, and Exposure"),		"f-iso-exp",	0,  PTP_VENDOR_SONY,   0,  _get_Sony_F_ISO_Exp, _put_Sony_F_ISO_Exp },
 	{ 0,0,0,0,0,0,0 },
 };
