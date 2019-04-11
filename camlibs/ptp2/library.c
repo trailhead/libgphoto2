@@ -1,7 +1,7 @@
 /* library.c
  *
  * Copyright (C) 2001-2005 Mariusz Woloszyn <emsi@ipartners.pl>
- * Copyright (C) 2003-2019 Marcus Meissner <marcus@jet.franken.de>
+ * Copyright (C) 2003-2018 Marcus Meissner <marcus@jet.franken.de>
  * Copyright (C) 2005 Hubert Figuiere <hfiguiere@teaser.fr>
  * Copyright (C) 2009 Axel Waggershauser <awagger@web.de>
  *
@@ -2051,9 +2051,6 @@ static struct {
 	/* pravsripad@gmail.com */
 	{"Canon:PowerShot SX520 HS",		0x04a9, 0x329b, PTPBUG_DELETE_SENDS_EVENT},
 
-	/* sparkycoladev@gmail.com */
-	{"Canon:PowerShot G7 X",		0x04a9, 0x329d, PTP_CAP|PTP_CAP_PREVIEW|PTP_DONT_CLOSE_SESSION},
-
 	/* Marcus Meissner <marcus@jet.franken.de> */
 	{"Canon:EOS M10",			0x04a9, 0x32a0, PTP_CAP|PTP_CAP_PREVIEW},
 
@@ -2079,8 +2076,6 @@ static struct {
 
 	/* Barney Livingston <barney.livingston@lobsterpictures.tv> */
 	{"Canon:EOS 1300D",			0x04a9, 0x32b4, PTP_CAP|PTP_CAP_PREVIEW},
-    /* Rebel T6 is the same camera. Jasem Mutlaq <mutlaqja@ikarustech.com> */
-    {"Canon:EOS Rebel T6",		0x04a9, 0x32b4, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Jim Howard <jh.xsnrg@gmail.com> */
 	{"Canon:EOS M5",			0x04a9, 0x32bb, PTP_CAP|PTP_CAP_PREVIEW},
@@ -2099,9 +2094,6 @@ static struct {
 
 	/* https://github.com/gphoto/libgphoto2/issues/235 */
 	{"Canon:EOS M6",			0x04a9, 0x32c5, PTP_CAP|PTP_CAP_PREVIEW},
-
-	/* https://github.com/gphoto/libgphoto2/issues/379 */
-	{"Canon:PowerShot G9 X Mark II",	0x04a9, 0x32c7, PTP_CAP|PTP_CAP_PREVIEW},
 
 	/* Viktors Berstis <gpjm@berstis.com> */
 	{"Canon:EOS Rebel T7i",			0x04a9, 0x32c9, PTP_CAP|PTP_CAP_PREVIEW},
@@ -2134,9 +2126,6 @@ static struct {
 
 	/* Jasem Mutlaq <mutlaqja@ikarustech.com> */
 	{"Canon:EOS 4000D",			0x04a9, 0x32d9, PTP_CAP|PTP_CAP_PREVIEW|PTPBUG_DELETE_SENDS_EVENT},
-
-	/* Christian Muehlhaeuser <muesli@gmail.com> */
-	{"Canon:EOS 2000D",			0x04a9, 0x32e1, PTP_CAP|PTP_CAP_PREVIEW|PTPBUG_DELETE_SENDS_EVENT},
 
 	/* Konica-Minolta PTP cameras */
 	{"Konica-Minolta:DiMAGE A2 (PTP mode)",        0x132b, 0x0001, 0},
@@ -2581,10 +2570,6 @@ camera_abilities (CameraAbilitiesList *list)
 			/* Sony Alpha are also trigger capture capable */
 			if (	models[i].usb_vendor == 0x54c)
 				a.operations |= GP_OPERATION_TRIGGER_CAPTURE;
-
-			/* Olympus test  trigger capture capable */
-			if (	models[i].usb_vendor == 0x7b4)
-				a.operations |= GP_OPERATION_TRIGGER_CAPTURE;
 #if 0
 			/* SX 100 IS ... works in sdram, not in card mode */
 			if (	(models[i].usb_vendor == 0x4a9) &&
@@ -2706,7 +2691,7 @@ camera_exit (Camera *camera, GPContext *context)
 					}
 					camera->pl->checkevents = 0;
 				}
-				if (params->inliveview && ptp_operation_issupported(params, PTP_OC_CANON_EOS_TerminateViewfinder))
+				if (params->inliveview)
 					ptp_canon_eos_end_viewfinder (params);
 				camera_unprepare_capture (camera, context);
 			}
@@ -2855,7 +2840,7 @@ camera_capture_preview (Camera *camera, CameraFile *file, GPContext *context)
 
 			/* do not set it everytime, it will cause delays */
 			ret = ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_EVFMode, &dpd);
-			if ((ret == PTP_RC_OK) && (dpd.CurrentValue.u16 != 1)) {
+			if ((ret != PTP_RC_OK) || (dpd.CurrentValue.u16 != 1)) {
 				/* 0 means off, 1 means on */
 				val.u16 = 1;
 				ret = ptp_canon_eos_setdevicepropvalue (params, PTP_DPC_CANON_EOS_EVFMode, &val, PTP_DTC_UINT16);
@@ -2866,7 +2851,7 @@ camera_capture_preview (Camera *camera, CameraFile *file, GPContext *context)
 			ptp_free_devicepropdesc (&dpd);
 			/* do not set it everytime, it will cause delays */
 			ret = ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_EVFOutputDevice, &dpd);
-			if ((ret == PTP_RC_OK) && (dpd.CurrentValue.u32 != 2)) {
+			if ((ret != PTP_RC_OK) || (dpd.CurrentValue.u32 != 2)) {
 				/* 2 means PC, 1 means TFT */
 				val.u32 = 2;
 				C_PTP_MSG (ptp_canon_eos_setdevicepropvalue (params, PTP_DPC_CANON_EOS_EVFOutputDevice, &val, PTP_DTC_UINT32),
@@ -3796,8 +3781,7 @@ camera_canon_eos_capture (Camera *camera, CameraCaptureType type, CameraFilePath
 
 	GP_LOG_D ("trying to get object size=0x%lx", (unsigned long)oi.ObjectCompressedSize);
 
-#define BLOBSIZE 1*1024*1024
-	/* the EOS R does not like 5MB, but likes 1MB */
+#define BLOBSIZE 5*1024*1024
 	/* Trying to read this in 1 block might be the cause of crashes of newer EOS */
 	{
 		uint32_t	offset = 0;
@@ -3808,7 +3792,7 @@ camera_canon_eos_capture (Camera *camera, CameraCaptureType type, CameraFilePath
 
 			if (xsize > BLOBSIZE)
 				xsize = BLOBSIZE;
-			C_PTP_REP (ptp_getpartialobject (params, newobject, offset, xsize, &ximage, &xsize));
+			C_PTP_REP (ptp_canon_eos_getpartialobject (params, newobject, offset, xsize, &ximage));
 			gp_file_append (file, (char*)ximage, xsize);
 			free (ximage);
 			offset += xsize;
@@ -5090,54 +5074,6 @@ camera_trigger_canon_eos_capture (Camera *camera, GPContext *context)
 			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 3, 1), _("Canon EOS Full-Press failed"));
 			
 
-			focus_start = time_now();
-			do {
-				int foundevents = 0;
-
-				C_PTP_REP_MSG (ptp_check_eos_events (params), _("Canon EOS Get Changes failed"));
-				while (ptp_get_one_eos_event (params, &entry)) {
-					foundevents = 1;
-					GP_LOG_D("focusing - read event type %d", entry.type);
-					if (entry.type == PTP_CANON_EOS_CHANGES_TYPE_FOCUSINFO) {
-						GP_LOG_D("focusinfo content: %s", entry.u.info);
-						foundfocusinfo = 1;
-						if (strstr(entry.u.info,"0000200")) {
-							gp_context_error (context, _("Canon EOS Capture failed to release: Perhaps no focus?"));
-							ret = GP_ERROR;
-						}
-					}
-					if (	(entry.type == PTP_CANON_EOS_CHANGES_TYPE_PROPERTY) &&
-						(entry.u.propid == PTP_DPC_CANON_EOS_FocusInfoEx)
-					) {
-						if (PTP_RC_OK == ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_FocusInfoEx, &dpd)) {
-							GP_LOG_D("focusinfo prop content: %s", dpd.CurrentValue.str);
-							if (!strstr(dpd.CurrentValue.str,"select={}")) /* select={} means "no focus yet" */
-								foundfocusinfo = 1;
-							ptp_free_devicepropdesc (&dpd);
-						}
-					}
-				}
-				/* We found focus information, so half way pressing has finished! */
-				if (foundfocusinfo)
-					break;
-				/* for manual focus, at least wait until we get events */
-				if (manualfocus && foundevents)
-					break;
-				/* when doing manual focus, wait at most 0.1 seconds */
-				if (manualfocus && (time_since (focus_start) >= 100))
-					break;
-			} while (waiting_for_timeout (&back_off_wait, focus_start, 2*1000)); /* wait 2 seconds for focus */
-
-			if (!foundfocusinfo && !manualfocus) {
-				GP_LOG_E("no focus info?\n");
-			}
-			if (ret != GP_OK) {
-				C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 1), _("Canon EOS Half-Release failed"));
-				return ret;
-			}
-			/* full press now */
-
-			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 2, 0), _("Canon EOS Full-Press failed"));
 			/* no event check between */
 			/* full release now */
 			// C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 2), _("Canon EOS Full-Release failed"));
@@ -5606,7 +5542,7 @@ camera_wait_for_event (Camera *camera, int timeout,
 
 					GP_LOG_D ("trying to get object size=0x%lx", (unsigned long)entry.u.object.oi.ObjectCompressedSize);
 
-#define BLOBSIZE 1*1024*1024
+#define BLOBSIZE 5*1024*1024
 					/* Trying to read this in 1 block might be the cause of crashes of newer EOS */
 					{
 						uint32_t	offset = 0;
@@ -5617,7 +5553,7 @@ camera_wait_for_event (Camera *camera, int timeout,
 
 							if (xsize > BLOBSIZE)
 								xsize = BLOBSIZE;
-							C_PTP_REP (ptp_getpartialobject (params, newobject, offset, xsize, &yimage, &xsize));
+							C_PTP_REP (ptp_canon_eos_getpartialobject (params, newobject, offset, xsize, &yimage));
 							gp_file_append (file, (char*)yimage, xsize);
 							free (yimage);
 							offset += xsize;
@@ -5714,16 +5650,6 @@ camera_wait_for_event (Camera *camera, int timeout,
 				}
 				case PTP_CANON_EOS_CHANGES_TYPE_PROPERTY:
 					*eventtype = GP_EVENT_UNKNOWN;
-					if (PTP_DPC_CANON_EOS_FocusInfoEx == entry.u.propid) {
-						PTPDevicePropDesc	dpd;
-
-						if (PTP_RC_OK == ptp_canon_eos_getdevicepropdesc (params, PTP_DPC_CANON_EOS_FocusInfoEx, &dpd)) {
-							C_MEM (*eventdata = malloc(strlen("FocusInfo ")+strlen(dpd.CurrentValue.str)+1));
-							sprintf (*eventdata, "FocusInfo %s", dpd.CurrentValue.str);
-							ptp_free_devicepropdesc (&dpd);
-							return GP_OK;
-						}
-					}
 					C_MEM (*eventdata = malloc(strlen("PTP Property 0123 changed")+1));
 					sprintf (*eventdata, "PTP Property %04x changed", entry.u.propid);
 					return GP_OK;
@@ -6068,67 +5994,7 @@ sonyout:
 		*eventtype = GP_EVENT_TIMEOUT;
 		return GP_OK;
 	}
-	if 	(params->deviceinfo.VendorExtensionID == PTP_VENDOR_GP_OLYMPUS_OMD)
-	 {
 
-		do {
-			C_PTP_REP (ptp_check_event (params));
-
-			while (ptp_get_one_event(params, &event)) {
-				GP_LOG_D ("received event Code %04x, Param 1 %08x", event.Code, event.Param1);
-				switch (event.Code) {
-				case 0xC002:
-				case PTP_EC_ObjectAdded:
-					newobject = event.Param1;
-					goto downloadomdfile;
-				default:
-					GP_LOG_D ("unexpected unhandled event Code %04x, Param 1 %08x", event.Code, event.Param1);
-					break;
-				}
-			}
-		}  while (waiting_for_timeout (&back_off_wait, event_start, 65000)); /* wait for 65 seconds after busy is no longer signaled */
-
-downloadomdfile:
-		C_MEM (path = malloc(sizeof(CameraFilePath)));
-		path->name[0]='\0';
-		path->folder[0]='\0';
-
-		if (newobject != 0) {
-			PTPObject	*ob = NULL;
-
-			C_PTP_REP (ptp_object_want (params, newobject, PTPOBJECT_OBJECTINFO_LOADED, &ob));
-
-			strcpy  (path->name,  ob->oi.Filename);
-			sprintf (path->folder,"/"STORAGE_FOLDER_PREFIX"%08lx/",(unsigned long)ob->oi.StorageID);
-			get_folder_from_handle (camera, ob->oi.StorageID, ob->oi.ParentObject, path->folder);
-			/* delete last / or we get confused later. */
-			path->folder[ strlen(path->folder)-1 ] = '\0';
-
-			CR (gp_filesystem_append (camera->fs, path->folder, path->name, context));
-
-			/* we also get the fs info for free, so just set it */
-			info.file.fields = GP_FILE_INFO_TYPE |
-					GP_FILE_INFO_WIDTH | GP_FILE_INFO_HEIGHT |
-					GP_FILE_INFO_SIZE | GP_FILE_INFO_MTIME;
-			strcpy_mime (info.file.type, params->deviceinfo.VendorExtensionID, ob->oi.ObjectFormat);
-			info.file.width		= ob->oi.ImagePixWidth;
-			info.file.height	= ob->oi.ImagePixHeight;
-			info.file.size		= ob->oi.ObjectCompressedSize;
-			info.file.mtime		= time(NULL);
-
-			info.preview.fields = GP_FILE_INFO_TYPE |
-					GP_FILE_INFO_WIDTH | GP_FILE_INFO_HEIGHT |
-					GP_FILE_INFO_SIZE;
-			strcpy_mime (info.preview.type, params->deviceinfo.VendorExtensionID, ob->oi.ThumbFormat);
-			info.preview.width	= ob->oi.ThumbPixWidth;
-			info.preview.height	= ob->oi.ThumbPixHeight;
-			info.preview.size	= ob->oi.ThumbCompressedSize;
-			GP_LOG_D ("setting fileinfo in fs");
-			*eventtype = GP_EVENT_FILE_ADDED;
-			*eventdata = path;
-			return gp_filesystem_set_info_noop(camera->fs, path->folder, path->name, info, context);
-		}
-	}
 	/* Wait for the whole timeout period */
 	CR (gp_port_get_timeout (camera->port, &oldtimeout));
 	CR (gp_port_set_timeout (camera->port, timeout));
@@ -7734,9 +7600,29 @@ get_file_func (CameraFilesystem *fs, const char *folder, const char *filename,
 			return mtp_get_playlist (camera, file, oid, context);
 
 		size=ob->oi.ObjectCompressedSize;
-#define BLOBSIZE 1*1024*1024
+/* EOS software uses 1MB blobs */
+#define BLOBSIZE 5*1024*1024
+		if (	(params->deviceinfo.VendorExtensionID == PTP_VENDOR_CANON) &&
+			(ptp_operation_issupported(params,PTP_OC_CANON_EOS_GetPartialObject)) &&
+			(size > BLOBSIZE)
+		) {
+				unsigned char	*ximage = NULL;
+				uint32_t 	offset = 0;
+
+				while (offset < size) {
+					uint32_t	xsize = size - offset;
+
+					if (xsize > BLOBSIZE)
+						xsize = BLOBSIZE;
+					C_PTP_REP (ptp_canon_eos_getpartialobject (params, oid, offset, xsize, &ximage));
+					gp_file_append (file, (char*)ximage, xsize);
+					free (ximage);
+					ximage = NULL;
+					offset += xsize;
+				}
+				goto done;
+		}
 		/* We also need this for Nikon D850 and very big RAWs (>40 MB) */
-		/* Try the generic method first, EOS R does not like the second for some reason */
 		if (	(ptp_operation_issupported(params,PTP_OC_GetPartialObject)) &&
 			(size > BLOBSIZE)
 		) {
@@ -7754,27 +7640,7 @@ get_file_func (CameraFilesystem *fs, const char *folder, const char *filename,
 					free (ximage);
 					ximage = NULL;
 					offset += xlen;
-				}
-				goto done;
-		}
-		/* EOS software uses 1MB blobs, use that too... EOS R does not like 5MB blobs */
-		if (	(params->deviceinfo.VendorExtensionID == PTP_VENDOR_CANON) &&
-			(ptp_operation_issupported(params,PTP_OC_CANON_EOS_GetPartialObject)) &&
-			(size > BLOBSIZE)
-		) {
-				unsigned char	*ximage = NULL;
-				uint32_t 	offset = 0;
 
-				while (offset < size) {
-					uint32_t	xsize = size - offset;
-
-					if (xsize > BLOBSIZE)
-						xsize = BLOBSIZE;
-					C_PTP_REP (ptp_getpartialobject (params, oid, offset, xsize, &ximage, &xsize));
-					gp_file_append (file, (char*)ximage, xsize);
-					free (ximage);
-					ximage = NULL;
-					offset += xsize;
 				}
 				goto done;
 		}

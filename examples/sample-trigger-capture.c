@@ -7,7 +7,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdarg.h>
 #include <string.h>
 #include <gphoto2/gphoto2.h>

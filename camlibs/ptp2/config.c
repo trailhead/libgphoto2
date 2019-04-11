@@ -543,8 +543,7 @@ camera_unprepare_canon_eos_capture(Camera *camera, GPContext *context) {
 	PTPParams		*params = &camera->pl->params;
 
 	/* just in case we had autofocus running */
-	if (ptp_operation_issupported(params, PTP_OC_CANON_EOS_AfCancel))
-		CR (ptp_canon_eos_afcancel(params));
+	CR (ptp_canon_eos_afcancel(params));
 
 	if (is_canon_eos_m (params)) {
 		PTPPropertyValue    ct_val;
@@ -2610,39 +2609,6 @@ _put_Olympus_ISO(CONFIG_PUT_ARGS)
 }
 
 static int
-_get_Olympus_OMD_Bulb(CONFIG_GET_ARGS) {
-	int val;
-
-	gp_widget_new (GP_WIDGET_TOGGLE, _(menu->label), widget);
-	gp_widget_set_name (*widget,menu->name);
-	val = 2; /* always changed */
-	gp_widget_set_value  (*widget, &val);
-	return (GP_OK);
-}
-
-static int
-_put_Olympus_OMD_Bulb(CONFIG_PUT_ARGS)
-{
-	PTPParams *params = &(camera->pl->params);
-	int val;
-	GPContext *context = ((PTPData *) params->data)->context;
-
-	CR (gp_widget_get_value(widget, &val));
-	if (val) {
-		int ret = ptp_olympus_omd_bulbstart (params);
-		if (ret == PTP_RC_GeneralError) {
-			gp_context_error (((PTPData *) camera->pl->params.data)->context,
-			_("For bulb capture to work, make sure the mode dial is switched to 'M' and set 'shutterspeed' to 'bulb'."));
-			return translate_ptp_result (ret);
-		}
-		C_PTP_REP (ret);
-	} else {
-		C_PTP_REP (ptp_olympus_omd_bulbend (params));
-	}
-	return GP_OK;
-}
-
-static int
 _get_ISO32(CONFIG_GET_ARGS) {
 	int i;
 
@@ -3977,19 +3943,20 @@ _get_Olympus_ShutterSpeed(CONFIG_GET_ARGS) {
 	gp_widget_set_name (*widget, menu->name);
 
 	for (i = 0; i<dpd->FORM.Enum.NumberOfValues; i++) {
-		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffc) {
+/* Nikon... replace with Olympus values
+		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xffffffff) {
 			sprintf(buf,_("Bulb"));
 			goto choicefound;
 		}
-		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffa) {
-		 	sprintf(buf,_("Composite"));
-		 	goto choicefound;
-		 }
-		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffb) {
+		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffe) {
+			sprintf(buf,_("x 200"));
+			goto choicefound;
+		}
+		if (dpd->FORM.Enum.SupportedValue[i].u32 == 0xfffffffd) {
 			sprintf(buf,_("Time"));
 			goto choicefound;
 		}
-
+*/
 		x = dpd->FORM.Enum.SupportedValue[i].u32>>16;
 		y = dpd->FORM.Enum.SupportedValue[i].u32&0xffff;
 
@@ -4002,9 +3969,9 @@ _get_Olympus_ShutterSpeed(CONFIG_GET_ARGS) {
 		} else {
 			sprintf (buf, "%d/%d",x,y);
 		}
-
+/*
 choicefound:
-
+*/
 		gp_widget_add_choice (*widget,buf);
 		if (dpd->CurrentValue.u32 == dpd->FORM.Enum.SupportedValue[i].u32) {
 			gp_widget_set_value (*widget, buf);
@@ -4031,18 +3998,20 @@ _put_Olympus_ShutterSpeed(CONFIG_PUT_ARGS) {
 
 	gp_widget_get_value (widget, &value_str);
 
+/* Nikon... replace with Olympus values
 	if (!strcmp(value_str,_("Bulb"))) {
-		propval->u32 = 0xfffffffc;
+		propval->u32 = 0xffffffff;
 		return GP_OK;
 	}
-	if (!strcmp(value_str,_("Composite"))) {
-	 	propval->u32 = 0xfffffffa;
-	 	return GP_OK;
-	 }
+	if (!strcmp(value_str,_("x 200"))) {
+		propval->u32 = 0xfffffffe;
+		return GP_OK;
+	}
 	if (!strcmp(value_str,_("Time"))) {
-		propval->u32 = 0xfffffffb;
+		propval->u32 = 0xfffffffd;
 		return GP_OK;
 	}
+*/
 
 	if (strchr(value_str, '/')) {
 		if (2 != sscanf (value_str, "%d/%d", &x, &y))
@@ -4050,10 +4019,8 @@ _put_Olympus_ShutterSpeed(CONFIG_PUT_ARGS) {
 	} else {
 		if (!sscanf (value_str, "%d", &x))
 			return GP_ERROR;
-		y = 10;
-		x *=10;
+		y = 1;
 	}
-
 	propval->u32 = (x<<16) | y;
 	return GP_OK;
 }
@@ -6625,46 +6592,15 @@ _put_Canon_AFMethod(CONFIG_PUT_ARGS) {
 	return GP_OK;
 }
 
-_get_Canon_RemoteMode(CONFIG_GET_ARGS) {
-	char		buf[200];
-	PTPParams	*params = &(camera->pl->params);
-	uint32_t	mode;
-
-	gp_widget_new (GP_WIDGET_TEXT, _(menu->label), widget);
-	gp_widget_set_name (*widget, menu->name);
-	if (ptp_operation_issupported (params, PTP_OC_CANON_EOS_GetRemoteMode)) {
-		C_PTP (ptp_canon_eos_getremotemode (params, &mode));
-		sprintf (buf, "%d", mode);
-	} else {
-		strcpy (buf, "0");
-	}
-	return gp_widget_set_value  (*widget, buf);
-}
-
-static int
-_put_Canon_RemoteMode(CONFIG_PUT_ARGS) {
-	uint32_t	mode;
-	char		*val;
-	PTPParams	*params = &(camera->pl->params);
-
-	CR (gp_widget_get_value(widget, &val));
-	if (!sscanf (val, "%d", &mode))
-		return GP_ERROR;
-	C_PTP (ptp_canon_eos_setremotemode (params, mode));
-	return GP_OK;
-}
-
-
 static int
 _get_Canon_EOS_ViewFinder(CONFIG_GET_ARGS) {
 	int val;
-	PTPParams		*params = &(camera->pl->params);
 
 	gp_widget_new (GP_WIDGET_TOGGLE, _(menu->label), widget);
 	gp_widget_set_name (*widget, menu->name);
-	val = params->inliveview;	/* try returning live view mode */
+	val = 2;	/* always changed, unless we can find out the state ... */
 	gp_widget_set_value  (*widget, &val);
-	return GP_OK;
+	return (GP_OK);
 }
 
 static int
@@ -6689,10 +6625,10 @@ _put_Canon_EOS_ViewFinder(CONFIG_PUT_ARGS) {
 		}
 	}
 	if (val)
-		xval.u16 = 2;
+		xval.u32 = 2;
 	else
-		xval.u16 = 0;
-	C_PTP_MSG (ptp_canon_eos_setdevicepropvalue (params, PTP_DPC_CANON_EOS_EVFOutputDevice, &xval, PTP_DTC_UINT16),
+		xval.u32 = 0;
+	C_PTP_MSG (ptp_canon_eos_setdevicepropvalue (params, PTP_DPC_CANON_EOS_EVFOutputDevice, &xval, PTP_DTC_UINT32),
 		   "ptp2_eos_viewfinder enable", "setval of evf outputmode to %d failed", xval.u32);
 	return GP_OK;
 }
@@ -8407,7 +8343,6 @@ static struct submenu camera_actions_menu[] = {
 	{ N_("Bulb Mode"),                      "bulb",             PTP_DPC_SONY_StillImage,PTP_VENDOR_SONY,   0,               _get_Sony_Bulb,                 _put_Sony_Bulb },
 	{ N_("Bulb Mode"),                      "bulb",             0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_BulbStart,         _get_Canon_EOS_Bulb,            _put_Canon_EOS_Bulb },
 	{ N_("Bulb Mode"),                      "bulb",             0,  PTP_VENDOR_NIKON,   PTP_OC_NIKON_TerminateCapture,      _get_Nikon_Bulb,                _put_Nikon_Bulb },
-	{ N_("Bulb Mode"),                      "bulb",             0,  PTP_VENDOR_GP_OLYMPUS_OMD,   PTP_OC_OLYMPUS_OMD_Capture,      _get_Olympus_OMD_Bulb,                _put_Olympus_OMD_Bulb },
 	{ N_("UI Lock"),                        "uilock",           0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_SetUILock,         _get_Canon_EOS_UILock,          _put_Canon_EOS_UILock },
 	{ N_("Popup Flash"),                    "popupflash",       0,  PTP_VENDOR_CANON,   PTP_OC_CANON_EOS_PopupBuiltinFlash, _get_Canon_EOS_PopupFlash,      _put_Canon_EOS_PopupFlash },
 	{ N_("Drive Nikon DSLR Autofocus"),     "autofocusdrive",   0,  PTP_VENDOR_NIKON,   PTP_OC_NIKON_AfDrive,               _get_Nikon_AFDrive,             _put_Nikon_AFDrive },
@@ -8517,7 +8452,6 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("CHDK"),     							"chdk",		PTP_OC_CHDK,  PTP_VENDOR_CANON,   0,  _get_CHDK,     _put_CHDK },
 	{ N_("Capture"),								"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
 	{ N_("AF Method"),						  "afmethod", PTP_DPC_CANON_EOS_LvAfSystem,  PTP_VENDOR_CANON,   PTP_DTC_UINT32,  _get_Canon_AFMethod,     _put_Canon_AFMethod },
-	{ N_("Remote Mode"),		"remotemode",	PTP_OC_CANON_EOS_SetRemoteMode,  PTP_VENDOR_CANON,   0,  _get_Canon_RemoteMode, _put_Canon_RemoteMode },
 	{ N_("F Stop, ISO, and Exposure"),		"f-iso-exp",	0,  PTP_VENDOR_SONY,   0,  _get_Sony_F_ISO_Exp, _put_Sony_F_ISO_Exp },
 	{ 0,0,0,0,0,0,0 },
 };
@@ -9437,7 +9371,7 @@ _set_config (Camera *camera, const char *confname, CameraWidget *window, GPConte
 					ret = cursub->putfunc (camera, widget, NULL, NULL);
 				}
 				if (mode == MODE_SINGLE_SET)
-					return ret;
+					return GP_OK;
 			}
 			if (have_eos_prop(params,cursub->vendorid,cursub->propid)) {
 				PTPDevicePropDesc	dpd;
@@ -9466,7 +9400,7 @@ _set_config (Camera *camera, const char *confname, CameraWidget *window, GPConte
 					ret = cursub->putfunc (camera, widget, &propval, &dpd);
 				}
 				if (mode == MODE_SINGLE_SET)
-					return ret;
+					return GP_OK;
 			}
 			if (ret != GP_OK)
 				return ret;
