@@ -4232,6 +4232,7 @@ _get_Sony_ShutterSpeed(CONFIG_GET_ARGS) {
 static int
 _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 	int			x,y,a,b;
+	int 		ret;
 	const char		*val;
 	float 			old,new;
 	PTPPropertyValue	value;
@@ -4239,6 +4240,8 @@ _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 	PTPParams		*params = &(camera->pl->params);
 	GPContext 		*context = ((PTPData *) params->data)->context;
 	time_t			start,end;
+
+  sony_update_config_info param_info;
 
 	new = 0;
 
@@ -4264,7 +4267,17 @@ _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 
 	}
 
+	// If we're not setting to Bulb, use the new Sony method.
+	if (new32 != 0) {
 
+	  _sony_config_shutter_struct(&param_info, camera, x, y);
+		ret = _sony_multiple_update_loop(&param_info, 1);
+
+		propval->u32 = new;
+		return ret;
+	}
+
+	// Fall back to the old method for Bulb
 	do {
 
 		if (dpd->CurrentValue.u32 == 0) {
