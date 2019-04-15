@@ -5032,7 +5032,7 @@ camera_trigger_canon_eos_capture (Camera *camera, GPContext *context)
 			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseon (params, 3, 1), _("Canon EOS Full-Press failed"));
 			/* no event check between */
 			/* full release now */
-			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 2), _("Canon EOS Full-Release failed"));
+			C_PTP_REP_MSG (ptp_canon_eos_remotereleaseoff (params, 3), _("Canon EOS Full-Release failed"));
 			ptp_check_eos_events (params);
 
 		} else {
