@@ -1,6 +1,6 @@
-//#define ARSENAL_DEBUG_FNUMBER
-//#define ARSENAL_DEBUG_ISO
-//#define ARSENAL_DEBUG_EXPOSURE
+#define ARSENAL_DEBUG_FNUMBER
+#define ARSENAL_DEBUG_ISO
+#define ARSENAL_DEBUG_EXPOSURE
 
 typedef struct {
   uint16_t dividend;                  // Ex: 1/10 sec, dividend is 10
@@ -491,41 +491,52 @@ static int _sony_calc_iso_steps(sony_update_config_info *pInfo) {
 #ifdef ARSENAL_DEBUG_ISO
   printf("calculating ISO steps\n");
 #endif
-
-  if (!(pInfo->dpd.FormFlag & PTP_DPFF_Enumeration))
+  if (pInfo->dpd.DataType != PTP_DTC_UINT32) {
     return (GP_ERROR);
-  if (pInfo->dpd.DataType != PTP_DTC_UINT32)
-    return (GP_ERROR);
-
-  /* match the closest value */
-  for (i=0;i<pInfo->dpd.FORM.Enum.NumberOfValues; i++) {
-    if (pInfo->dpd.FORM.Enum.SupportedValue[i].u32 == pInfo->target.u32) {
-      targetIndex = i;
+  }
+  if ((pInfo->dpd.FormFlag & PTP_DPFF_Enumeration) && pInfo->dpd.FORM.Enum.NumberOfValues > 0) {
+    /* match the closest value */
+    for (i=0;i<pInfo->dpd.FORM.Enum.NumberOfValues; i++) {
+      if (pInfo->dpd.FORM.Enum.SupportedValue[i].u32 == pInfo->target.u32) {
+        targetIndex = i;
+      }
+      if (pInfo->dpd.FORM.Enum.SupportedValue[i].u32 == pInfo->dpd.CurrentValue.u32) {
+        currentIndex = i;
+      }
     }
-    if (pInfo->dpd.FORM.Enum.SupportedValue[i].u32 == pInfo->dpd.CurrentValue.u32) {
-      currentIndex = i;
+    if (targetIndex == -1 || currentIndex == -1) {
+#ifdef ARSENAL_DEBUG_ISO
+      printf("target (%d) or current iso (%d) not found\n", pInfo->target.u32, pInfo->dpd.CurrentValue.u32);
+#endif
+      return GP_ERROR;
+    } else {
+#ifdef ARSENAL_DEBUG_ISO
+      printf("target iso (%d) index = %d\n", pInfo->target.u32, targetIndex);
+      printf("current iso (%d) index = %d\n", pInfo->dpd.CurrentValue.u32, currentIndex);
+#endif
+      pInfo->stepsCalc = targetIndex - currentIndex;
+
+      if (pInfo->stepsCalc > 3) {
+        pInfo->stepsCalc = 3;
+      }
+      if (pInfo->stepsCalc < -3) {
+        pInfo->stepsCalc = -3;
+      }
     }
-  }
-  if (targetIndex == -1 || currentIndex == -1) {
-#ifdef ARSENAL_DEBUG_ISO
-    printf("target (%d) or current iso (%d) not found\n", pInfo->target.u32, pInfo->dpd.CurrentValue.u32);
-#endif
+  } else {
+    // Some cameras like the a9 don't provide an enum
+    // In that case we'll single step it, but recalculate a little faster.
+    pInfo->changeRecalcBaseTimeout        = 0.5f;
+    pInfo->stepDelay                      = 0.06f;
 
-    return GP_ERROR;
-  }
-
-#ifdef ARSENAL_DEBUG_ISO
-  printf("target iso (%d) index = %d\n", pInfo->target.u32, targetIndex);
-  printf("current iso (%d) index = %d\n", pInfo->dpd.CurrentValue.u32, currentIndex);
-#endif
-
-  pInfo->stepsCalc = targetIndex - currentIndex;
-
-  if (pInfo->stepsCalc > 3) {
-    pInfo->stepsCalc = 3;
-  }
-  if (pInfo->stepsCalc < -3) {
-    pInfo->stepsCalc = -3;
+    if (pInfo->dpd.CurrentValue.u32 == pInfo->target.u32) {
+      pInfo->stepsCalc = 0;
+    }
+    if (pInfo->dpd.CurrentValue.u32 < pInfo->target.u32) {
+      pInfo->stepsCalc = 1;
+    } else {
+      pInfo->stepsCalc = -1;
+    }
   }
 
 #ifdef ARSENAL_DEBUG_ISO
