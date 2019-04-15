@@ -1,6 +1,6 @@
-#define ARSENAL_DEBUG_FNUMBER
-#define ARSENAL_DEBUG_ISO
-#define ARSENAL_DEBUG_EXPOSURE
+// #define ARSENAL_DEBUG_FNUMBER
+// #define ARSENAL_DEBUG_ISO
+// #define ARSENAL_DEBUG_EXPOSURE
 
 typedef struct {
   uint16_t dividend;                  // Ex: 1/10 sec, dividend is 10
@@ -47,6 +47,46 @@ typedef struct sony_update_config_info {
   uint8_t (*check_timeout)(sony_update_config_info *pInfo);
   uint8_t (*check_complete)(sony_update_config_info *pInfo);
 } sony_update_config_info;
+
+static int _sony_iso_fallback_table[] = {
+  50,
+  64,
+  80,
+  100,
+  125,
+  160,
+  200,
+  250,
+  320,
+  400,
+  500,
+  640,
+  800,
+  1000,
+  1250,
+  1600,
+  2000,
+  2500,
+  3200,
+  4000,
+  5000,
+  6400,
+  8000,
+  10000,
+  12800,
+  16000,
+  20000,
+  25600,
+  32000,
+  40000,
+  51200,
+  64000,
+  80000,
+  102400,
+  128000,
+  160000,
+  204800
+};
 
 static int _sony_multiple_update_loop(sony_update_config_info *pInfo, uint8_t count);
 
@@ -504,38 +544,42 @@ static int _sony_calc_iso_steps(sony_update_config_info *pInfo) {
         currentIndex = i;
       }
     }
-    if (targetIndex == -1 || currentIndex == -1) {
-#ifdef ARSENAL_DEBUG_ISO
-      printf("target (%d) or current iso (%d) not found\n", pInfo->target.u32, pInfo->dpd.CurrentValue.u32);
-#endif
-      return GP_ERROR;
-    } else {
-#ifdef ARSENAL_DEBUG_ISO
-      printf("target iso (%d) index = %d\n", pInfo->target.u32, targetIndex);
-      printf("current iso (%d) index = %d\n", pInfo->dpd.CurrentValue.u32, currentIndex);
-#endif
-      pInfo->stepsCalc = targetIndex - currentIndex;
-
-      if (pInfo->stepsCalc > 3) {
-        pInfo->stepsCalc = 3;
-      }
-      if (pInfo->stepsCalc < -3) {
-        pInfo->stepsCalc = -3;
-      }
-    }
   } else {
     // Some cameras like the a9 don't provide an enum
-    // In that case we'll single step it, but recalculate a little faster.
-    pInfo->changeRecalcBaseTimeout        = 0.5f;
-    pInfo->stepDelay                      = 0.06f;
+    // In that case use the fallback lookup table.
+    /* match the closest value */
 
-    if (pInfo->dpd.CurrentValue.u32 == pInfo->target.u32) {
-      pInfo->stepsCalc = 0;
+#ifdef ARSENAL_DEBUG_ISO
+    printf("Using fallback table for ISO\n");
+#endif
+
+    for (i=0;i<sizeof(_sony_iso_fallback_table)/sizeof(int); i++) {
+      if (_sony_iso_fallback_table[i] == pInfo->target.u32) {
+        targetIndex = i;
+      }
+      if (_sony_iso_fallback_table[i] == pInfo->dpd.CurrentValue.u32) {
+        currentIndex = i;
+      }
     }
-    if (pInfo->dpd.CurrentValue.u32 < pInfo->target.u32) {
-      pInfo->stepsCalc = 1;
-    } else {
-      pInfo->stepsCalc = -1;
+  }
+
+  if (targetIndex == -1 || currentIndex == -1) {
+#ifdef ARSENAL_DEBUG_ISO
+    printf("target (%d) or current iso (%d) not found\n", pInfo->target.u32, pInfo->dpd.CurrentValue.u32);
+#endif
+    return GP_ERROR;
+  } else {
+#ifdef ARSENAL_DEBUG_ISO
+    printf("target iso (%d) index = %d\n", pInfo->target.u32, targetIndex);
+    printf("current iso (%d) index = %d\n", pInfo->dpd.CurrentValue.u32, currentIndex);
+#endif
+    pInfo->stepsCalc = targetIndex - currentIndex;
+
+    if (pInfo->stepsCalc > 3) {
+      pInfo->stepsCalc = 3;
+    }
+    if (pInfo->stepsCalc < -3) {
+      pInfo->stepsCalc = -3;
     }
   }
 
