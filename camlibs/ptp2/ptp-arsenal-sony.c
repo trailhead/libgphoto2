@@ -416,9 +416,9 @@ void _sony_config_iso_struct(sony_update_config_info *pInfo, Camera *camera, uin
   pInfo->stepsTotalSent                 = 0;
 
   pInfo->lastChange                     = 0.0f;
-  pInfo->changeErrorTimeout             = 5.0f; // No change for x seconds times out
-  pInfo->changeRecalcBaseTimeout        = 0.7f; // The quickest we can expect an F step to complete
-  pInfo->changeRecalcPerStepTimeout     = 0.045f; //
+  pInfo->changeErrorTimeout             = 3.0f; // No change for x seconds times out
+  pInfo->changeRecalcBaseTimeout        = 0.6f; // The quickest we can expect an F step to complete
+  pInfo->changeRecalcPerStepTimeout     = 0.05f; //
   pInfo->stepDelay                      = 0.04f;
   pInfo->stepDelayCurrent               = 0.04f;
   pInfo->stepDelayAddPerStep            = 0.01f;
@@ -535,32 +535,21 @@ static int _sony_calc_iso_steps(sony_update_config_info *pInfo) {
   if (pInfo->dpd.DataType != PTP_DTC_UINT32) {
     return (GP_ERROR);
   }
-  if ((pInfo->dpd.FormFlag & PTP_DPFF_Enumeration) && pInfo->dpd.FORM.Enum.NumberOfValues > 0) {
-    /* match the closest value */
-    for (i=0;i<pInfo->dpd.FORM.Enum.NumberOfValues; i++) {
-      if (pInfo->dpd.FORM.Enum.SupportedValue[i].u32 == pInfo->target.u32) {
-        targetIndex = i;
-      }
-      if (pInfo->dpd.FORM.Enum.SupportedValue[i].u32 == pInfo->dpd.CurrentValue.u32) {
-        currentIndex = i;
-      }
-    }
-  } else {
-    // Some cameras like the a9 don't provide an enum
-    // In that case use the fallback lookup table.
-    /* match the closest value */
+
+  // Some cameras like the a9 don't provide an enum
+  // In that case use the fallback lookup table.
+  /* match the closest value */
 
 #ifdef ARSENAL_DEBUG_F_ISO_EXP
-    printf("Using fallback table for ISO\n");
+  printf("Using fallback table for ISO\n");
 #endif
 
-    for (i=0;i<sizeof(_sony_iso_fallback_table)/sizeof(int); i++) {
-      if (_sony_iso_fallback_table[i] == pInfo->target.u32) {
-        targetIndex = i;
-      }
-      if (_sony_iso_fallback_table[i] == pInfo->dpd.CurrentValue.u32) {
-        currentIndex = i;
-      }
+  for (i=0;i<sizeof(_sony_iso_fallback_table)/sizeof(int); i++) {
+    if (_sony_iso_fallback_table[i] == pInfo->target.u32) {
+      targetIndex = i;
+    }
+    if (_sony_iso_fallback_table[i] == pInfo->dpd.CurrentValue.u32) {
+      currentIndex = i;
     }
   }
 
