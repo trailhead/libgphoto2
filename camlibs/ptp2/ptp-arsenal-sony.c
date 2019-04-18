@@ -434,7 +434,6 @@ void _sony_config_iso_struct(sony_update_config_info *pInfo, Camera *camera, uin
 
   //A9 has a bit more difficult timing
   if (strstr(a.model, "Alpha-A9")) {
-    printf("using sony A9 timings\n");
     pInfo->changeErrorTimeout             = 5.0f; // No change for x seconds times out
     pInfo->changeRecalcBaseTimeout        = 0.5f; // The quickest we can expect an F step to complete
     pInfo->changeRecalcPerStepTimeout     = 0.05f; //
