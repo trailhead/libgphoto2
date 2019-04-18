@@ -1,4 +1,4 @@
-// #define ARSENAL_DEBUG_F_ISO_EXP
+//#define ARSENAL_DEBUG_F_ISO_EXP
 
 typedef struct {
   uint16_t dividend;                  // Ex: 1/10 sec, dividend is 10
@@ -379,6 +379,7 @@ void _sony_config_f_number_struct(sony_update_config_info *pInfo, Camera *camera
   pInfo->complete                       = FALSE;
   pInfo->camera                         = camera;
   pInfo->propcode                       = PTP_DPC_FNumber;
+
   pInfo->get_current_value              = _sony_get_current_f_number;
   pInfo->calculate_steps                = _sony_calc_f_number_steps;
   pInfo->check_timeout                  = _sony_check_f_number_timeout;
@@ -402,9 +403,14 @@ void _sony_config_f_number_struct(sony_update_config_info *pInfo, Camera *camera
 }
 
 void _sony_config_iso_struct(sony_update_config_info *pInfo, Camera *camera, uint32_t isoTarget) {
+
+  CameraAbilities a;
+	gp_camera_get_abilities (camera, &a);
+
   pInfo->complete                       = FALSE;
   pInfo->camera                         = camera;
   pInfo->propcode                       = PTP_DPC_SONY_ISO;
+
   pInfo->get_current_value              = _sony_get_current_iso;
   pInfo->calculate_steps                = _sony_calc_iso_steps;
   pInfo->check_timeout                  = _sony_check_iso_timeout;
@@ -425,6 +431,14 @@ void _sony_config_iso_struct(sony_update_config_info *pInfo, Camera *camera, uin
   pInfo->current.u32                    = 0;
   pInfo->target.u32                     = isoTarget;
   pInfo->last.u32                       = 0;  
+
+  //A9 has a bit more difficult timing
+  if (strstr(a.model, "Alpha-A9")) {
+    printf("using sony A9 timings\n");
+    pInfo->changeErrorTimeout             = 5.0f; // No change for x seconds times out
+    pInfo->changeRecalcBaseTimeout        = 0.5f; // The quickest we can expect an F step to complete
+    pInfo->changeRecalcPerStepTimeout     = 0.05f; //
+  }
 }
 
 void _sony_config_shutter_struct(sony_update_config_info *pInfo, Camera *camera, uint16_t expTargetDividend, uint16_t expTargetDivisor) {
