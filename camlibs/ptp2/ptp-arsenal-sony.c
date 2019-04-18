@@ -1,6 +1,4 @@
-// #define ARSENAL_DEBUG_FNUMBER
-// #define ARSENAL_DEBUG_ISO
-// #define ARSENAL_DEBUG_EXPOSURE
+// #define ARSENAL_DEBUG_F_ISO_EXP
 
 typedef struct {
   uint16_t dividend;                  // Ex: 1/10 sec, dividend is 10
@@ -36,6 +34,8 @@ typedef struct sony_update_config_info {
 
   // Time values
   double stepDelay;                    // Minimum time delay between steps
+  double stepDelayCurrent;             // Current time delay between steps including per step addition
+  double stepDelayAddPerStep;          // Add this much to the step delay between steps
   double lastChange;
   double changeErrorTimeout;           // No change for x seconds times out
   double changeRecalcBaseTimeout;     // The quickest we can expect an F step to complete
@@ -206,11 +206,11 @@ _put_Sony_F_ISO_Exp(CONFIG_PUT_ARGS) {
     return GP_ERROR_BAD_PARAMETERS;
   }
 
-#ifdef ARSENAL_DEBUG_FNUMBER
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("Target F = %lf\n", fTarget);
 #endif
 
-#ifdef ARSENAL_DEBUG_EXPOSURE
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("Target Exposure = %d/%d\n", expTargetDividend, expTargetDivisor);
 #endif
 
@@ -260,92 +260,87 @@ _sony_multiple_update_loop(sony_update_config_info *pInfo, uint8_t count) {
       loopStartTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
 
       pInfo[i].loopStartTime = loopStartTime;
-      //printf("Loop %u start time = %lf\n", fStepsTotalSent,loopStartTime - startTime);
 
-      // If target has not been reached, calculate and send more steps    
-      if (pInfo[i].complete != TRUE) {
-        pInfo[i].get_current_value(&pInfo[i]);
+      if (pInfo[i].complete == FALSE) {
 
-        pInfo[i].calculate_steps(&pInfo[i]);
+        if (pInfo[i].stepsRemain == 0) {
+          pInfo[i].get_current_value(&pInfo[i]);
 
-  #ifdef ARSENAL_DEBUG_FNUMBER
-        printf("Last = %d\n", pInfo[i].last.u32);
-        printf("Current = %d\n", pInfo[i].current.u32);
-        printf("Last change = %lf\n", (pInfo[i].lastChange == 0.0f) ? 0.0f : pInfo[i].lastChange - startTime);
-        printf("Change will timeout at = %lf\n", pInfo[i].lastChange + pInfo[i].changeErrorTimeout - startTime);
-        printf("stepsRemain = %u\n", pInfo[i].stepsRemain);
-  #endif
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
+          printf("Target, current\t\t%d\t%d\n", pInfo[i].target.u32,pInfo[i].current.u32);
+#endif
 
-        // Check to make sure we're not stuck not movie
-        if (pInfo[i].stepsTotalSent > 0) {
-          if (pInfo[i].check_timeout(&pInfo[i])) {
-  #ifdef ARSENAL_DEBUG_FNUMBER
-            printf("Timed out for no movement\n");
-  #endif
-            break;
+          // Check if anything has changed and if so update the lastChanged time
+          if (pInfo[i].stepsTotalSent > 0 && pInfo[i].last.u32 != pInfo[i].current.u32) {
+            pInfo[i].lastChange = loopStartTime;
           }
-        }
 
-        // If we've hit the target
-        if (pInfo[i].check_complete(&pInfo[i]) == TRUE) {
-          pInfo[i].complete = TRUE;
-  #ifdef ARSENAL_DEBUG_FNUMBER
-          printf("Hit target F or close enough\n");
-  #endif
-        } else {
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
+          printf("Last = %d\n", pInfo[i].last.u32);
+          printf("Current = %d\n", pInfo[i].current.u32);
+          printf("Last change = %lf\n", (pInfo[i].lastChange == 0.0f) ? 0.0f : pInfo[i].lastChange - startTime);
+          printf("Change will timeout at = %lf\n", pInfo[i].lastChange + pInfo[i].changeErrorTimeout - startTime);
+          printf("stepsRemain = %u\n", pInfo[i].stepsRemain);
+          printf("stepDelayCurrent = %f\n", pInfo[i].stepDelayCurrent);
+#endif
 
-  #ifdef ARSENAL_DEBUG_FNUMBER
-          printf("Not yet at F target.\n");
-  #endif
+          if (pInfo[i].check_complete(&pInfo[i]) == TRUE) {
+            pInfo[i].complete = TRUE;
+            continue;
+          } else {
 
-          // Ensure fStepDelay seconds have elapsed
-          if (pInfo[i].stepsTotalSent == 0 || pInfo[i].lastChange + pInfo[i].stepDelay < pInfo[i].loopStartTime) {
-  #ifdef ARSENAL_DEBUG_FNUMBER
-            printf("Enough time has passed for a step.\n");
-            printf("Last F change = %lf\n", (pInfo[i].lastChange == 0.0f) ? 0.0f : pInfo[i].lastChange - startTime);
-  #endif
-            // If no steps remain and recalc timeout since last change has passed, recalculate because we're not there yet
-            if (pInfo[i].stepsRemain == 0 &&
-              (pInfo[i].stepsTotalSent == 0 || pInfo[i].lastChange + pInfo[i].changeRecalcBaseTimeout + (pInfo[i].changeRecalcPerStepTimeout * (double)pInfo[i].stepsLastCalc) < loopStartTime)) {
+            // If no steps remain (or we haven't sent any yet) recalc timeout since last change has passed, recalculate because we're not there yet
+            if (pInfo[i].stepsTotalSent == 0 || pInfo[i].lastChange + pInfo[i].changeRecalcBaseTimeout + (pInfo[i].changeRecalcPerStepTimeout * (double)pInfo[i].stepsLastCalc) < loopStartTime) {
+      
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
+              printf("Recalculating Recalculating Recalculating Recalculating Recalculating Recalculating\n");
+#endif
+              pInfo[i].calculate_steps(&pInfo[i]);
+              
+              pInfo[i].stepDelayCurrent = pInfo[i].stepDelay;
               pInfo[i].stepsRemain = fabs(pInfo[i].stepsCalc);
               pInfo[i].stepsLastCalc = pInfo[i].stepsRemain;
 
-  #ifdef ARSENAL_DEBUG_FNUMBER
-              printf("fMoves = %lf\n", pInfo[i].stepsCalc);
-              printf("Setting F steps remain to = %u\n", pInfo[i].stepsRemain);
+  #ifdef ARSENAL_DEBUG_F_ISO_EXP
+              printf("Steps calculated this time = %lf\n", pInfo[i].stepsCalc);
+              printf("Setting steps remain to = %u\n", pInfo[i].stepsRemain);
   #endif
             } else {
-  #ifdef ARSENAL_DEBUG_FNUMBER
-              printf("Not time to recalc F yet.\n");
+  #ifdef ARSENAL_DEBUG_F_ISO_EXP
+              printf("Not time to recalc yet.\n");
   #endif
             }
-
-            // If we still have steps to send, send one now
-            if (pInfo[i].stepsRemain > 0 && pInfo[i].lastChange + pInfo[i].stepDelay < pInfo[i].loopStartTime) {
-              if (pInfo[i].stepsCalc > 0) {
-                moveVal.u8 = 0x01;
-              } else {
-                moveVal.u8 = 0xff;
-              }
-
-              //printf("Stepping F - fLastChange =%lf\n", fLastChange -startTime);
-              C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, pInfo[i].propcode, &moveVal, PTP_DTC_UINT8 ));
-              pInfo[i].lastChange =  pInfo[i].loopStartTime;
-              pInfo[i].stepsTotalSent++;
-              pInfo[i].stepsRemain--;
-            }
-          } else {
-  #ifdef ARSENAL_DEBUG_FNUMBER
-            printf("Not time to step F yet.\n");
-  #endif
           }
         }
 
-        pInfo[i].last.u32 = pInfo[i].current.u32;
-      } // End update f-number
-    }
+        // Check this again in case steps were recalculated
+        if (pInfo[i].stepsRemain > 0) {
+          // If we still have steps to send, send one now
+          if (pInfo[i].lastChange + pInfo[i].stepDelayCurrent < pInfo[i].loopStartTime) {
+            if (pInfo[i].stepsCalc > 0) {
+              moveVal.u8 = 0x01;
+            } else {
+              moveVal.u8 = 0xff;
+            }
 
-    usleep(50000); // Sleep 50ms
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
+            printf("Stepping lastChange = %lf\n", pInfo[i].lastChange - startTime);
+#endif
+            C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, pInfo[i].propcode, &moveVal, PTP_DTC_UINT8 ));
+            pInfo[i].lastChange =  pInfo[i].loopStartTime;
+            pInfo[i].stepsTotalSent++;
+            pInfo[i].stepDelayCurrent += pInfo[i].stepDelayAddPerStep;
+            pInfo[i].stepsRemain--;
+          }
+        }
+
+        // Keep track of the last value we've seen for future comparison
+        pInfo[i].last.u32 = pInfo[i].current.u32;
+
+//        usleep(50000); // Sleep 50ms
+
+      } // End update this property
+    }
 
     gettimeofday(&tv, NULL);
     loopEndTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
@@ -398,7 +393,9 @@ void _sony_config_f_number_struct(sony_update_config_info *pInfo, Camera *camera
   pInfo->changeErrorTimeout             = 5.0f; // No change for x seconds times out
   pInfo->changeRecalcBaseTimeout        = 0.6f; // The quickest we can expect an F step to complete
   pInfo->changeRecalcPerStepTimeout     = 0.1f; //
-  pInfo->stepDelay                      = 0.08f;
+  pInfo->stepDelay                      = 0.04f;
+  pInfo->stepDelayCurrent               = 0.04f;
+  pInfo->stepDelayAddPerStep            = 0.01f;
   pInfo->current.f                      = 0.0f;
   pInfo->target.f                       = fTarget;
   pInfo->last.f                         = 0.0f;
@@ -420,9 +417,11 @@ void _sony_config_iso_struct(sony_update_config_info *pInfo, Camera *camera, uin
 
   pInfo->lastChange                     = 0.0f;
   pInfo->changeErrorTimeout             = 5.0f; // No change for x seconds times out
-  pInfo->changeRecalcBaseTimeout        = 0.6f; // The quickest we can expect an F step to complete
-  pInfo->changeRecalcPerStepTimeout     = 0.1f; //
-  pInfo->stepDelay                      = 0.08f;
+  pInfo->changeRecalcBaseTimeout        = 0.7f; // The quickest we can expect an F step to complete
+  pInfo->changeRecalcPerStepTimeout     = 0.045f; //
+  pInfo->stepDelay                      = 0.04f;
+  pInfo->stepDelayCurrent               = 0.04f;
+  pInfo->stepDelayAddPerStep            = 0.01f;
   pInfo->current.u32                    = 0;
   pInfo->target.u32                     = isoTarget;
   pInfo->last.u32                       = 0;  
@@ -445,8 +444,10 @@ void _sony_config_shutter_struct(sony_update_config_info *pInfo, Camera *camera,
   pInfo->lastChange                     = 0.0f;
   pInfo->changeErrorTimeout             = 5.0f; // No change for x seconds times out
   pInfo->changeRecalcBaseTimeout        = 0.6f; // The quickest we can expect an F step to complete
-  pInfo->changeRecalcPerStepTimeout     = 0.1f; //
-  pInfo->stepDelay                      = 0.08f;
+  pInfo->changeRecalcPerStepTimeout     = 0.05f; //
+  pInfo->stepDelay                      = 0.04f;
+  pInfo->stepDelayCurrent               = 0.04f;
+  pInfo->stepDelayAddPerStep            = 0.01f;
   pInfo->current.u32                    = 0.0f;
   pInfo->target.u16_fraction.dividend   = expTargetDividend;
   pInfo->target.u16_fraction.divisor    = expTargetDivisor;
@@ -470,7 +471,7 @@ static int _sony_calc_f_number_steps(sony_update_config_info *pInfo) {
   float fCurrentSteps;
   float fTargetSteps;
 
-#ifdef ARSENAL_DEBUG_FNUMBER
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("calculating f steps\n");
 #endif
 
@@ -486,7 +487,7 @@ static int _sony_calc_f_number_steps(sony_update_config_info *pInfo) {
 static uint8_t _sony_check_f_number_timeout(sony_update_config_info *pInfo) {
   if (pInfo->last.f > 0.0f && fabs(pInfo->current.f - pInfo->last.f) < 0.3f) {
     // No change
-    #ifdef ARSENAL_DEBUG_FNUMBER
+    #ifdef ARSENAL_DEBUG_F_ISO_EXP
       printf("Checking for timeout - no movement\n");
     #endif
     if (pInfo->lastChange + pInfo->changeErrorTimeout < pInfo->loopStartTime) {
@@ -494,7 +495,7 @@ static uint8_t _sony_check_f_number_timeout(sony_update_config_info *pInfo) {
     }
   } else {
     // Record time of last change for timeout
-#ifdef ARSENAL_DEBUG_FNUMBER
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
     printf("Something changed, recording time\n");
 #endif
     pInfo->lastChange = pInfo->loopStartTime;
@@ -504,7 +505,7 @@ static uint8_t _sony_check_f_number_timeout(sony_update_config_info *pInfo) {
 }
 
 static uint8_t _sony_check_f_number_complete(sony_update_config_info *pInfo) {
-  if (fabs(pInfo->target.f - pInfo->current.f) < 0.1f || pInfo->stepsCalc == 0) {
+  if (fabs(pInfo->target.f - pInfo->current.f) < 0.1f) {
     return TRUE;
   }
 
@@ -528,7 +529,7 @@ static int _sony_calc_iso_steps(sony_update_config_info *pInfo) {
   int32_t targetIndex = -1;
   int32_t currentIndex = -1;
 
-#ifdef ARSENAL_DEBUG_ISO
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("calculating ISO steps\n");
 #endif
   if (pInfo->dpd.DataType != PTP_DTC_UINT32) {
@@ -549,7 +550,7 @@ static int _sony_calc_iso_steps(sony_update_config_info *pInfo) {
     // In that case use the fallback lookup table.
     /* match the closest value */
 
-#ifdef ARSENAL_DEBUG_ISO
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
     printf("Using fallback table for ISO\n");
 #endif
 
@@ -564,26 +565,20 @@ static int _sony_calc_iso_steps(sony_update_config_info *pInfo) {
   }
 
   if (targetIndex == -1 || currentIndex == -1) {
-#ifdef ARSENAL_DEBUG_ISO
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
     printf("target (%d) or current iso (%d) not found\n", pInfo->target.u32, pInfo->dpd.CurrentValue.u32);
 #endif
     return GP_ERROR;
   } else {
-#ifdef ARSENAL_DEBUG_ISO
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
     printf("target iso (%d) index = %d\n", pInfo->target.u32, targetIndex);
     printf("current iso (%d) index = %d\n", pInfo->dpd.CurrentValue.u32, currentIndex);
 #endif
     pInfo->stepsCalc = targetIndex - currentIndex;
 
-    if (pInfo->stepsCalc > 3) {
-      pInfo->stepsCalc = 3;
-    }
-    if (pInfo->stepsCalc < -3) {
-      pInfo->stepsCalc = -3;
-    }
   }
 
-#ifdef ARSENAL_DEBUG_ISO
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("ISO steps = %d\n", pInfo->stepsCalc);
 #endif
 
@@ -592,7 +587,7 @@ static int _sony_calc_iso_steps(sony_update_config_info *pInfo) {
 
 static uint8_t _sony_check_iso_timeout(sony_update_config_info *pInfo) {
   if (pInfo->current.u32 == pInfo->last.u32) {
-    #ifdef ARSENAL_DEBUG_ISO
+    #ifdef ARSENAL_DEBUG_F_ISO_EXP
       printf("Checking for ISO timeout - no movement\n");
     #endif
     if (pInfo->lastChange + pInfo->changeErrorTimeout < pInfo->loopStartTime) {
@@ -600,7 +595,7 @@ static uint8_t _sony_check_iso_timeout(sony_update_config_info *pInfo) {
     }
   } else {
     // Record time of last change for timeout
-#ifdef ARSENAL_DEBUG_ISO
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
     printf("ISO changed, recording time\n");
 #endif
     pInfo->lastChange = pInfo->loopStartTime;
@@ -610,7 +605,7 @@ static uint8_t _sony_check_iso_timeout(sony_update_config_info *pInfo) {
 }
 
 static uint8_t _sony_check_iso_complete(sony_update_config_info *pInfo) {
-  if (pInfo->target.u32 == pInfo->current.u32 || pInfo->stepsCalc == 0) {
+  if (pInfo->target.u32 == pInfo->current.u32) {
     return TRUE;
   }
 
@@ -644,7 +639,7 @@ static int _sony_calc_shutter_steps(sony_update_config_info *pInfo) {
   char currentBuf[16];
   char targetBuf[16];
 
-#ifdef ARSENAL_DEBUG_EXPOSURE
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("Calculating shutter steps\n");
 #endif
 
@@ -663,6 +658,15 @@ static int _sony_calc_shutter_steps(sony_update_config_info *pInfo) {
 
   int testDivisor = 1;
   int testDividend = 0;
+
+  // Handle stepping out of bulb
+  if (pInfo->current.u16_fraction.dividend == 0 && pInfo->current.u16_fraction.divisor == 0) {
+    pInfo->stepsCalc = 1;
+  #ifdef ARSENAL_DEBUG_F_ISO_EXP
+    printf("shutterspeed steps to -1 for bulb\n");
+  #endif
+    return GP_OK;
+  }
 
   if (pInfo->current.u16_fraction.divisor == 1) {
     sprintf(currentBuf, "%d", pInfo->current.u16_fraction.dividend);
@@ -700,21 +704,21 @@ static int _sony_calc_shutter_steps(sony_update_config_info *pInfo) {
   }
 
   if (targetIndex == -1 || currentIndex == -1) {
-#ifdef ARSENAL_DEBUG_EXPOSURE
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("target (%d/%d) or current shutterspeed (%d/%d) not found\n", pInfo->target.u16_fraction.dividend, pInfo->target.u16_fraction.divisor, pInfo->current.u16_fraction.dividend, pInfo->current.u16_fraction.divisor);
 #endif
 
     return GP_ERROR;
   }
 
-#ifdef ARSENAL_DEBUG_EXPOSURE
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("target shutterspeed (%d/%d) index = %d\n", pInfo->target.u16_fraction.dividend, pInfo->target.u16_fraction.divisor, targetIndex);
   printf("current shutterspeed (%d/%d) index = %d\n", pInfo->current.u16_fraction.dividend, pInfo->current.u16_fraction.divisor, currentIndex);
 #endif
 
   pInfo->stepsCalc = targetIndex - currentIndex;
 
-#ifdef ARSENAL_DEBUG_EXPOSURE
+#ifdef ARSENAL_DEBUG_F_ISO_EXP
   printf("shutterspeed steps = %d\n", pInfo->stepsCalc);
 #endif
 
