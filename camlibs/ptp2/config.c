@@ -1313,9 +1313,6 @@ PUT_SONY_VALUE_(u16,uint16_t) /* _put_sony_value_u16 */
 PUT_SONY_VALUE_(i16,int16_t) /* _put_sony_value_i16 */
 PUT_SONY_VALUE_(u32,uint32_t) /* _put_sony_value_u32 */
 
-/* Arsenal specific sony functions */
-#include "ptp-arsenal-sony.c"
-
 static int
 _get_CANON_FirmwareVersion(CONFIG_GET_ARGS) {
 	char value[64];
@@ -2726,37 +2723,207 @@ _get_Sony_ISO(CONFIG_GET_ARGS) {
 	return GP_OK;
 }
 
+static int _sony_iso_table[] = {
+  50,
+  64,
+  80,
+  100,
+  125,
+  160,
+  200,
+  250,
+  320,
+  400,
+  500,
+  640,
+  800,
+  1000,
+  1250,
+  1600,
+  2000,
+  2500,
+  3200,
+  4000,
+  5000,
+  6400,
+  8000,
+  10000,
+  12800,
+  16000,
+  20000,
+  25600,
+  32000,
+  40000,
+  51200,
+  64000,
+  80000,
+  102400,
+  128000,
+  160000,
+  204800
+};
+
 static int
 _put_Sony_ISO(CONFIG_PUT_ARGS)
 {
-	char 		*value;
-	uint32_t	u;
+	char 		*strValue;
+	uint32_t	value;
 	PTPParams	*params = &(camera->pl->params);
-  sony_update_config_info param_info;
 
-	CR (gp_widget_get_value(widget, &value));
-	if (!strcmp(value,_("Auto ISO"))) {
-		u = 0x00ffffff;
+	GPContext 		*context = ((PTPData *) params->data)->context;
+	PTPDevicePropDesc	dpdSet;
+	PTPPropertyValue	propvalSet;
+	uint32_t			origval;
+	time_t			start,end;
+	int			tries = 100;	/* 100 steps allowed towards the new value */
+	int useenumorder = 1;
+
+	CR (gp_widget_get_value(widget, &strValue));
+	if (!strcmp(strValue,_("Auto ISO"))) {
+		value = 0x00ffffff;
 		goto setiso;
 	}
-	if (!strcmp(value,_("Auto ISO Multi Frame Noise Reduction"))) {
-		u = 0x01ffffff;
+	if (!strcmp(strValue,_("Auto ISO Multi Frame Noise Reduction"))) {
+		value = 0x01ffffff;
 		goto setiso;
 	}
 
-	if (!sscanf(value, "%ud", &u))
+	if (!sscanf(strValue, "%ud", &value))
 		return GP_ERROR;
 
-	if (strstr(value,_("Multi Frame Noise Reduction"))) {
-    u |= 0x1000000;
-	} else {
-		_sony_config_iso_struct(&param_info, camera, u);
-		return _sony_multiple_update_loop(&param_info, sizeof(param_info)/sizeof(sony_update_config_info));
-	}
+	if (strstr(strValue,_("Multi Frame Noise Reduction")))
+		value |= 0x10000;
 
 setiso:
-	propval->u32 = u;
-	return _put_sony_value_u32(params, PTP_DPC_SONY_ISO, u, 1);
+	propval->u32 = value;
+
+	GP_LOG_D("setting 0x%04x to 0x%08x", PTP_DPC_SONY_ISO, value);
+
+	C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
+	C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_SONY_ISO, &dpdSet));
+	if (value == dpdSet.CurrentValue.u32) {
+		GP_LOG_D("value is already 0x%08x", value);
+		return GP_OK;
+	}
+fallback:
+	do {
+		origval = dpdSet.CurrentValue.u32;
+		int posorig = -1, posnew = -1;
+		/* ENUM does not work on A9, so use lookup table instead */
+		if (useenumorder) {
+			int i;
+
+			for (i=0;i<(sizeof(_sony_iso_table)/sizeof(int));i++) {
+				if (origval == _sony_iso_table[i])
+					posorig = i;
+				if (value == _sony_iso_table[i])
+					posnew = i;
+				if ((posnew != -1) && (posorig != -1))
+					break;
+			}
+			if (posnew == -1) {
+				gp_context_error (context, _("Target value is not in _sony_iso_table."));
+				return GP_ERROR_BAD_PARAMETERS;
+			}
+			GP_LOG_D("posnew %d, posorig %d, value %d", posnew, posorig, value);
+			if (posnew == posorig)
+				break;
+			if (posnew > posorig)
+				propvalSet.u8 = 0x01;
+			else
+				propvalSet.u8 = 0xff;
+
+		} else {
+			if (value == origval)
+				break;
+			if (value > origval)
+				propvalSet.u8 = 0x01;
+			else
+				propvalSet.u8 = 0xff;
+		}
+		int movesteps;
+		if (posorig > posnew) {
+			movesteps = posorig - posnew;
+		} else {
+			movesteps = posnew - posorig;
+		}
+		if (movesteps < 3) { movesteps = 1; }
+
+		for (int i=0;i < movesteps;i++) {
+			C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_SONY_ISO, &propvalSet, PTP_DTC_UINT8 ));
+			usleep(70000);
+		}
+
+		GP_LOG_D ("value is (0x%x vs target 0x%x)", origval, value);
+
+		/* we tell the camera to do it, but it takes around 0.7 seconds for the SLT-A58 */
+		time(&start);
+		do {
+			C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
+			C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_SONY_ISO, &dpdSet));
+			if (dpdSet.CurrentValue.u32 == value) {
+				GP_LOG_D ("Value matched!");
+				break;
+			}
+			if (dpdSet.CurrentValue.u32 != origval) {
+				GP_LOG_D ("value changed (0x%x vs 0x%x vs target 0x%x), next step....", dpdSet.CurrentValue.u32, origval, value);
+				break;
+			}
+
+			usleep(20*1000);
+
+			time(&end);
+		} while (end-start <= 3);
+
+		if (dpdSet.CurrentValue.u32 == value) {
+			GP_LOG_D ("Value matched!");
+			break;
+		}
+		if (dpdSet.CurrentValue.u32 == origval) {
+			GP_LOG_D ("value did not change (0x%x vs 0x%x vs target 0x%x), not good ...", dpdSet.CurrentValue.u32, origval, value);
+			break;
+		}
+		/* We did not get there. Did we hit 0? */
+		if (useenumorder) {
+			int i, posnow = -1;
+
+			for (i=0;i<sizeof(_sony_iso_table)/sizeof(int);i++) {
+				if (dpdSet.CurrentValue.u32 == _sony_iso_table[i]) {
+					posnow = i;
+					/*printf("check if finished: %d, %d vs %d\n", dpdSet.CurrentValue.u32, i, posnew);*/
+					if (abs(i - posnew) < 2) {
+					    usleep(800000);
+					    C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
+					    C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_SONY_ISO, &dpdSet));
+
+
+					    if (dpdSet.CurrentValue.u32 == _sony_iso_table[i]) {
+					    	break;
+					    }
+					} else {
+						break;
+					}
+				}
+			}
+			if (posnow == -1) {
+				GP_LOG_D ("Now value is not in _sony_iso_table, falling back to ordered tries.");
+				useenumorder = 0;
+				goto fallback;
+			}
+			GP_LOG_D("posnow %d, value %d", posnow, dpdSet.CurrentValue.u32);
+			if ((posnow == 0) && (propvalSet.u8 == 0xff)) {
+				gp_context_error (context, _("Sony was not able to set the new value, is it valid?"));
+				GP_LOG_D ("hit bottom of _sony_iso_table, not good.");
+				return GP_ERROR;
+			}
+			if ((posnow == sizeof(_sony_iso_table)/sizeof(int)-1) && (propvalSet.u8 == 0x01)) {
+				GP_LOG_D ("hit top of _sony_iso_table, not good.");
+				gp_context_error (context, _("Sony was not able to set the new value, is it valid?"));
+				return GP_ERROR;
+			}
+		} 
+	} while (tries--);/* occasionaly we fail, make an escape path */
+	return GP_OK;
 }
 
 static int
@@ -2961,31 +3128,64 @@ _put_Sony_FNumber(CONFIG_PUT_ARGS) {
 	PTPPropertyValue	moveval;
 	float targetf, currentf, targetStops, currentStops, moves;
 
-	float fMaxStops = 12;
-	float fLastValue = 0;
+	float maxApertureStops = 12;
+	float lastValuef = 0;
 
-	struct timeval tv;
-	double startTime, endTime;
-
-	int ret;
-
-  sony_update_config_info param_info;
-
-	gettimeofday(&tv, NULL);
-	startTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
 
 	// Pull the target value
 	CR (gp_widget_get_value (widget, &targetf));
 
-  _sony_config_f_number_struct(&param_info, camera, targetf);
-  ret = _sony_multiple_update_loop(&param_info, sizeof(param_info)/sizeof(sony_update_config_info));
+	targetStops = maxApertureStops - (float)(log(targetf*targetf) / log(2));
 
-	gettimeofday(&tv, NULL);
-	endTime = tv.tv_sec + (tv.tv_usec / 1000000.0);
+	do {
 
-	printf("Exiting - cycle time = %lf\n", endTime - startTime);
+		C_PTP_REP (ptp_sony_getalldevicepropdesc (params));
+		C_PTP_REP (ptp_generic_getdevicepropdesc (params, PTP_DPC_FNumber, dpd));
 
- 	return ret;
+		currentf = ((float)dpd->CurrentValue.u16) / 100.0;
+
+		// Check how many stops we need to move
+		currentStops = maxApertureStops - (float)(log(currentf*currentf) / log(2));
+
+		// How many moves to get to the target (assumes camera is setup for 1/3rd stops)
+		moves = (currentStops - targetStops) * 3;
+
+		if (moves < 0.1 && moves > -0.1) {
+			break; // close enough
+		} else if (moves > 0) {
+			moveval.u8 = 0x01;
+		} else {
+			moveval.u8 = 0xff;
+		}
+
+		if (moves < 0 && moves > -2) {
+			moves = -1;
+		} else if (moves > 0 && moves < 2) {
+			moves = 1;
+		}
+
+		// Make the number of predicted moves
+		for (int i=0;i < ceil(abs(moves));i++) {
+			C_PTP_REP (ptp_sony_setdevicecontrolvalueb (params, PTP_DPC_FNumber, &moveval, PTP_DTC_UINT8 ));
+			usleep(70000);
+		}
+
+		if (targetf == currentf) {
+			// Hit target value
+			break;
+		}
+
+		// Check to make sure we're not stuck not movie
+		if (lastValuef != 0 && abs(currentf - lastValuef) < 0.3) {
+			// No movement
+			break;
+		}
+		lastValuef = currentf;
+
+		usleep(800000);
+	} while(1);
+
+	return GP_OK;
 }
 
 
@@ -4232,7 +4432,6 @@ _get_Sony_ShutterSpeed(CONFIG_GET_ARGS) {
 static int
 _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 	int			x,y,a,b;
-	int 		ret;
 	const char		*val;
 	float 			old,new;
 	PTPPropertyValue	value;
@@ -4240,8 +4439,6 @@ _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 	PTPParams		*params = &(camera->pl->params);
 	GPContext 		*context = ((PTPData *) params->data)->context;
 	time_t			start,end;
-
-  sony_update_config_info param_info;
 
 	new = 0;
 
@@ -4267,17 +4464,7 @@ _put_Sony_ShutterSpeed(CONFIG_PUT_ARGS) {
 
 	}
 
-	// If we're not setting to Bulb, use the new Sony method.
-	if (new32 != 0) {
 
-	  _sony_config_shutter_struct(&param_info, camera, x, y);
-		ret = _sony_multiple_update_loop(&param_info, 1);
-
-		propval->u32 = new;
-		return ret;
-	}
-
-	// Fall back to the old method for Bulb
 	do {
 
 		if (dpd->CurrentValue.u32 == 0) {
@@ -8531,7 +8718,6 @@ static struct submenu camera_settings_menu[] = {
 	{ N_("Capture"),								"capture",	0,  PTP_VENDOR_CANON,   0,  _get_Canon_CaptureMode, _put_Canon_CaptureMode },
 	{ N_("AF Method"),						  "afmethod", PTP_DPC_CANON_EOS_LvAfSystem,  PTP_VENDOR_CANON,   PTP_DTC_UINT32,  _get_Canon_AFMethod,     _put_Canon_AFMethod },
 	{ N_("Remote Mode"),		"remotemode",	PTP_OC_CANON_EOS_SetRemoteMode,  PTP_VENDOR_CANON,   0,  _get_Canon_RemoteMode, _put_Canon_RemoteMode },
-	{ N_("F Stop, ISO, and Exposure"),		"f-iso-exp",	0,  PTP_VENDOR_SONY,   0,  _get_Sony_F_ISO_Exp, _put_Sony_F_ISO_Exp },
 	{ 0,0,0,0,0,0,0 },
 };
 
