@@ -3020,6 +3020,13 @@ enable_liveview:
 				value.u8 = 0;
 				goto enable_liveview;
 			}
+
+			printf("PREVIEW IMAGE---------------\n");
+			for (int i=0;i < size;i++) {
+				printf("%x", *(data+i));
+			}
+			printf("----------------------------\n");
+
 			if (ret == PTP_RC_OK) {
 				if (firstimage) {
 					/* the first image on the S9700 is corrupted. so just skip the first image */
