@@ -3022,11 +3022,11 @@ enable_liveview:
 				goto enable_liveview;
 			}
 
-			// printf("PREVIEW IMAGE---------------\n");
-			// for (int i=0;i < size;i++) {
-			// 	printf("%x", *(data+i));
-			// }
-			// printf("----------------------------\n");
+			printf("PREVIEW IMAGE---------------\n");
+			for (int i=0;i < size;i++) {
+				printf("%x,", (unsigned char)*(data+i));
+			}
+			printf("----------------------------\n");
 
 			if (ret == PTP_RC_OK) {
 				if (firstimage) {
