@@ -2975,13 +2975,14 @@ camera_capture_preview (Camera *camera, CameraFile *file, GPContext *context)
 		SET_CONTEXT_P(params, context);
 
 		/* Nilon V and J seem to like that */
-		if (!params->controlmode && ptp_operation_issupported(params,PTP_OC_NIKON_SetControlMode)) {
-			ret = ptp_nikon_setcontrolmode (params, 1);
-			/* FIXME: PTP_RC_NIKON_ChangeCameraModeFailed does not seem to be problematic */
-			if (ret != PTP_RC_NIKON_ChangeCameraModeFailed)
-				C_PTP_REP (ret);
-			params->controlmode = 1;
-		}
+		/* Disabled by Ryan, the Z7 doesn't need this */
+		// if (!params->controlmode && ptp_operation_issupported(params,PTP_OC_NIKON_SetControlMode)) {
+		// 	ret = ptp_nikon_setcontrolmode (params, 1);
+		// 	 FIXME: PTP_RC_NIKON_ChangeCameraModeFailed does not seem to be problematic
+		// 	if (ret != PTP_RC_NIKON_ChangeCameraModeFailed)
+		// 		C_PTP_REP (ret);
+		// 	params->controlmode = 1;
+		// }
 
 		ret = ptp_getdevicepropvalue (params, PTP_DPC_NIKON_LiveViewStatus, &value, PTP_DTC_UINT8);
 		if (ret != PTP_RC_OK)
@@ -3021,11 +3022,11 @@ enable_liveview:
 				goto enable_liveview;
 			}
 
-			printf("PREVIEW IMAGE---------------\n");
-			for (int i=0;i < size;i++) {
-				printf("%x", *(data+i));
-			}
-			printf("----------------------------\n");
+			// printf("PREVIEW IMAGE---------------\n");
+			// for (int i=0;i < size;i++) {
+			// 	printf("%x", *(data+i));
+			// }
+			// printf("----------------------------\n");
 
 			if (ret == PTP_RC_OK) {
 				if (firstimage) {
@@ -3424,14 +3425,15 @@ camera_nikon_capture (Camera *camera, CameraCaptureType type, CameraFilePath *pa
 	if (params->deviceinfo.VendorExtensionID!=PTP_VENDOR_NIKON)
 		return GP_ERROR_NOT_SUPPORTED;
 
+	/* Disabled by Ryan */
 	/* Nilon V and J seem to like that */
-	if (!params->controlmode && ptp_operation_issupported(params,PTP_OC_NIKON_SetControlMode)) {
-		ret = ptp_nikon_setcontrolmode (params, 1);
-		/* FIXME: PTP_RC_NIKON_ChangeCameraModeFailed does not seem to be problematic */
-		if (ret != PTP_RC_NIKON_ChangeCameraModeFailed)
-			C_PTP_REP (ret);
-		params->controlmode = 1;
-	}
+	// if (!params->controlmode && ptp_operation_issupported(params,PTP_OC_NIKON_SetControlMode)) {
+	// 	ret = ptp_nikon_setcontrolmode (params, 1);
+	// 	// FIXME: PTP_RC_NIKON_ChangeCameraModeFailed does not seem to be problematic
+	// 	if (ret != PTP_RC_NIKON_ChangeCameraModeFailed)
+	// 		C_PTP_REP (ret);
+	// 	params->controlmode = 1;
+	// }
 
 	if (	!ptp_operation_issupported(params,PTP_OC_NIKON_Capture) &&
 		!ptp_operation_issupported(params,PTP_OC_NIKON_AfCaptureSDRAM) &&
@@ -5139,17 +5141,18 @@ camera_trigger_capture (Camera *camera, GPContext *context)
 
 	GP_LOG_D ("Triggering capture to %s, autofocus=%d", buf, af);
 
+	/* Disabled by Ryan */
 	/* Nilon V and J seem to like that */
-	if (	(params->deviceinfo.VendorExtensionID == PTP_VENDOR_NIKON) &&
-		!params->controlmode &&
-		ptp_operation_issupported(params,PTP_OC_NIKON_SetControlMode)
-	) {
-		ret = ptp_nikon_setcontrolmode (params, 1);
-		/* FIXME: PTP_RC_NIKON_ChangeCameraModeFailed does not seem to be problematic */
-		if (ret != PTP_RC_NIKON_ChangeCameraModeFailed)
-			C_PTP_REP (ret);
-		params->controlmode = 1;
-	}
+	// if (	(params->deviceinfo.VendorExtensionID == PTP_VENDOR_NIKON) &&
+	// 	!params->controlmode &&
+	// 	ptp_operation_issupported(params,PTP_OC_NIKON_SetControlMode)
+	// ) {
+	// 	ret = ptp_nikon_setcontrolmode (params, 1);
+	// 	/* FIXME: PTP_RC_NIKON_ChangeCameraModeFailed does not seem to be problematic */
+	// 	if (ret != PTP_RC_NIKON_ChangeCameraModeFailed)
+	// 		C_PTP_REP (ret);
+	// 	params->controlmode = 1;
+	// }
 
 	/* On Nikon 1 series, the liveview must be enabled before capture works */
 	if (NIKON_1(params)) {
