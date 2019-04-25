@@ -2494,7 +2494,7 @@ ptp_unpack_CANON_changes (PTPParams *params, unsigned char* data, int datasize, 
 				ptp_debug (params, "event %d: OLC unexpected size %d for blob len %d (not -4 nor -8)", i, size, len);
 				break;
 			}
-			mask = dtoh16a(curdata+8+4);
+ 			mask = dtoh16a(curdata+8+4);
 			if (size < 14) {
 				ce[i].type = PTP_CANON_EOS_CHANGES_TYPE_UNKNOWN;
 				ce[i].u.info = strdup("OLC size too small");
@@ -2535,6 +2535,7 @@ ptp_unpack_CANON_changes (PTPParams *params, unsigned char* data, int datasize, 
 				/* this seesm to be the shutter speed record */
 				/* EOS 200D seems to have 7 bytes here, sample:
 				 * 7 bytes: 01 03 98 10 00 70 00 
+				 * EOS RP also has 7 bytes, olcver=0x12
 				 */
 				proptype = PTP_DPC_CANON_EOS_ShutterSpeed;
 				dpd = _lookup_or_allocate_canon_prop(params, proptype);
@@ -2544,8 +2545,10 @@ ptp_unpack_CANON_changes (PTPParams *params, unsigned char* data, int datasize, 
 				ce[i].u.propid = proptype;
 				/* hack to differ between older EOS and EOS 200D newer */
 				switch (olcver) {
+				case 0x12:
+				case 0x11:
 				case 0xf:
-					curoff += 7;	/* f (200D), 8 (M10) */
+					curoff += 7;	/* f (200D, EOS R, EOS RP), 8 (M10) */
 					break;
 				case 0x7:
 				case 0x8: /* EOS 70D */
@@ -2570,7 +2573,11 @@ ptp_unpack_CANON_changes (PTPParams *params, unsigned char* data, int datasize, 
 
 				ce[i].type = PTP_CANON_EOS_CHANGES_TYPE_PROPERTY;
 				ce[i].u.propid = proptype;
-				if (olcver >= 0xf) {
+				if (olcver >= 0x11) {
+					/* EOS RP has this startint at offset 7 */
+					dpd->CurrentValue.u16 = curdata[curoff+7];
+					curoff += 9;	/* 11, 12 */
+				} else if (olcver >= 0xf) {
 					curoff += 6;	/* f */
 				} else {
 					curoff += 5;	/* 7, 8, b */
