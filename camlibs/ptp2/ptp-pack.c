@@ -2573,14 +2573,14 @@ ptp_unpack_CANON_changes (PTPParams *params, unsigned char* data, int datasize, 
 
 				ce[i].type = PTP_CANON_EOS_CHANGES_TYPE_PROPERTY;
 				ce[i].u.propid = proptype;
-				if (olcver >= 0x11) {
-					/* EOS RP has this startint at offset 7 */
+				if (olcver >= 0x12) {
+					/* EOS RP has this starting at offset 7 */
 					dpd->CurrentValue.u16 = curdata[curoff+7];
-					curoff += 9;	/* 11, 12 */
+					curoff += 9;	/* 0x12 */
 				} else if (olcver >= 0xf) {
-					curoff += 6;	/* f */
+					curoff += 6;	/* 0x11, 0xf */
 				} else {
-					curoff += 5;	/* 7, 8, b */
+					curoff += 5;	/* 0x7, 0x8, 0xb */
 				}
 				i++;
 			}
