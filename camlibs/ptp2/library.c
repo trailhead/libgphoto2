@@ -2966,6 +2966,7 @@ camera_capture_preview (Camera *camera, CameraFile *file, GPContext *context)
 		gp_context_error (context, _("Sorry, your Canon camera does not support Canon Viewfinder mode"));
 		return GP_ERROR_NOT_SUPPORTED;
 	case PTP_VENDOR_NIKON: {
+		PTPPropertyValue	prev_recordingmedia_value;
 		PTPPropertyValue	value;
 		int 			tries, firstimage = 0;
 
@@ -2993,8 +2994,13 @@ camera_capture_preview (Camera *camera, CameraFile *file, GPContext *context)
 enable_liveview:
 		if (!value.u8) {
 			value.u8 = 1;
-			if (have_prop(camera, params->deviceinfo.VendorExtensionID, PTP_DPC_NIKON_RecordingMedia))
+			if (have_prop(camera, params->deviceinfo.VendorExtensionID, PTP_DPC_NIKON_RecordingMedia)) {
+				ret = ptp_getdevicepropvalue (params, PTP_DPC_NIKON_RecordingMedia, &prev_recordingmedia_value, PTP_DTC_UINT8);
+				if (ret != PTP_RC_OK) {
+					C_PTP_REP_MSG (ret, _("Nikon get current recordingmedia value"));
+				}
 				LOG_ON_PTP_E (ptp_setdevicepropvalue (params, PTP_DPC_NIKON_RecordingMedia, &value, PTP_DTC_UINT8));
+			}
 
 			ret = ptp_nikon_start_liveview (params);
 			if ((ret != PTP_RC_OK) && (ret != PTP_RC_DeviceBusy))
@@ -3089,6 +3095,11 @@ enable_liveview:
 		C_PTP_REP_MSG (ptp_nikon_end_liveview (params),
 			       _("Nikon disable liveview failed"));
 #endif
+
+		if (have_prop(camera, params->deviceinfo.VendorExtensionID, PTP_DPC_NIKON_RecordingMedia)) {
+			LOG_ON_PTP_E (ptp_setdevicepropvalue (params, PTP_DPC_NIKON_RecordingMedia, &prev_recordingmedia_value, PTP_DTC_UINT8));
+		}
+
 		SET_CONTEXT_P(params, NULL);
 		return GP_OK;
 	}
